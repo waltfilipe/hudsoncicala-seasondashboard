@@ -1782,8 +1782,8 @@ with tab_dash:
                     f'<div style="background:{expl_bg};border:1px solid {expl_bd};'
                     f'border-radius:8px;padding:8px 12px;margin-top:4px;font-size:11px;color:#d0d0e8;">'
                     f'<strong>💡 Explanation</strong><br>'
-                    f"Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>"
-                    f"% Positive Impact — Passes that generated a positive impact based on where they ended on the field."
+                    f"Calculation used to measure the cumulative offensive value generated through passing.<br>"
+                    f"% of passes that generated a positive impact based on where they ended on the field."
                     f"</div>",
                     unsafe_allow_html=True,
                 )
@@ -1965,7 +1965,7 @@ with tab_dash:
                 )
             with col_ds2:
                 section_card(
-                    "⚔️ Duels and Interceptions",
+                    "⚔️ Duels",
                     C_GREEN_PASTEL,
                     [
                         ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
