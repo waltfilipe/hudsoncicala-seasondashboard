@@ -3,9 +3,7 @@ import os
 import math
 from pathlib import Path
 from io import BytesIO
-
 import streamlit as st
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -32,23 +30,159 @@ except Exception:
 # STYLE
 st.markdown("""
 <style>
-    .stApp { background-color: #0d0d1f; }
-    .main .block-container { padding: 1.5rem 2rem; }
-    .stTabs [data-baseweb="tab-list"] { gap: 2px; }
-    .stTabs [data-baseweb="tab"] { background-color: #1a1a2e; color: #d0d0e8; border-radius: 6px 6px 0 0; padding: 0.5rem 1.2rem; font-weight: 500; }
-    .stTabs [aria-selected="true"] { background-color: #2a2a4e; color: white; }
-    .stSelectbox label, .stRadio label { color: #d0d0e8 !important; font-weight: 500; }
-    .stSelectbox div[data-baseweb="select"] > div { background-color: #1a1a2e; border-color: #3a3a5c; color: #f0f0f8; }
-    .element-container p, .element-container span, .element-container li { color: #d0d0e8; }
-    section[data-testid="stSidebar"] { background-color: #0d0d1f; border-right: 1px solid #2a2a4e; }
-    section[data-testid="stSidebar"] p { color: #b0b0c8; }
-    .stButton button { background: linear-gradient(135deg, #2a2a4e, #1a1a3e); border: 1px solid #4a4a6c; color: #f0f0f8; border-radius: 6px; font-weight: 500; }
-    .stButton button:hover { background: linear-gradient(135deg, #3a3a5e, #2a2a4e); border-color: #5a5a7c; color: white; }
-    .stDownloadButton button { background: linear-gradient(135deg, #2a2a4e, #1a1a3e); border: 1px solid #4a4a6c; color: #f0f0f8; }
-    .st-emotion-cache-1c7y2kd { color: #d0d0e8; }
-    hr { border-color: #2a2a4e; }
-    [data-testid="stMetricValue"] { color: white; }
-    div.row-widget.stRadio > div[role="radiogroup"] > label { color: #d0d0e8 !important; }
+    /* main background */
+    .stApp, .stApp > header, .stApp > footer {
+        background: #0d0d1f !important;
+        color: #d0d0e8 !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    /* sidebar header */
+    .stSidebar {
+        background: #0a0a18 !important;
+    }
+    .sidebar-title {
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        color: #ffffff !important;
+        margin-bottom: 0px !important;
+    }
+    .sidebar-subtitle {
+        font-size: 13px !important;
+        color: #5a5a7a !important;
+        margin-top: -4px !important;
+        margin-bottom: 10px !important;
+    }
+    .sidebar-stat {
+        font-size: 14px !important;
+        color: #a0a0c0 !important;
+        margin: 2px 0 !important;
+    }
+    /* metric cards */
+    div[data-testid="metric-container"] {
+        background: #14142a !important;
+        border: 1px solid #2a2a4a !important;
+        border-radius: 14px !important;
+        padding: 14px 18px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+    }
+    div[data-testid="metric-container"] > label {
+        color: #5a5a7a !important;
+        font-size: 12px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+    }
+    div[data-testid="metric-container"] > div {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 22px !important;
+    }
+    /* section cards */
+    .section-card {
+        background: #14142a;
+        border-radius: 16px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        position: relative;
+        overflow: hidden;
+    }
+    .section-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; width: 4px; height: 100%;
+        border-radius: 16px 0 0 16px;
+    }
+    .section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #5a5a7a;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 8px;
+    }
+    .section-label {
+        font-size: 13px;
+        color: #8a8aac;
+        display: inline;
+    }
+    .section-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+        float: right;
+    }
+    .section-sub {
+        font-size: 11px;
+        color: #5a5a7a;
+        margin-top: -2px;
+    }
+    .explanation-card {
+        background: #14142a;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-top: 8px;
+        font-size: 11px;
+        color: #5a5a7a;
+        line-height: 1.5;
+    }
+    .explanation-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+    .cmp-arrow {
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 4px;
+    }
+    .tooltip-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        background: #2a2a4a;
+        color: #8a8aac;
+        border-radius: 50%;
+        font-size: 9px;
+        font-weight: 700;
+        margin-left: 4px;
+        cursor: help;
+    }
+    .stSelectbox label, .stRadio label {
+        color: #a0a0c0 !important;
+        font-size: 13px !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        background: #0a0a18 !important;
+        border-radius: 12px !important;
+        padding: 4px !important;
+        gap: 4px !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px !important;
+        color: #5a5a7a !important;
+        font-weight: 500 !important;
+        font-size: 13px !important;
+        padding: 6px 18px !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #1a1a3e !important;
+        color: #ffffff !important;
+    }
+    .plot-container {
+        background: #0a0a18 !important;
+        border-radius: 16px !important;
+        padding: 8px !important;
+        border: 1px solid #1a1a3e !important;
+    }
+    .plot-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #a0a0c0;
+        margin-bottom: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -74,8 +208,10 @@ C_PURPLE_LIGHT = "#a78bfa"
 C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
+
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
+
 NX_XT, NY_XT = 16, 12
 D_REF, D_SCALE, BONUS_CAP = 10.0, 20.0, 0.60
 LATERAL_MIN_DIST = 12.0
@@ -606,7 +742,9 @@ except Exception:
 combined_matches_data = {}
 for k, v in docx_matches_data.items():
     mapped_k = apply_date_mapping(k)
-    name = mapped_k if mapped_k not in combined_matches_data else f"DOCX - {mapped_k}"
+    name = mapped_k
+    if mapped_k not in combined_matches_data:
+        name = f"DOCX - {mapped_k}"
     combined_matches_data[name] = v
 for k, v in BASE_MATCHES_DATA.items():
     combined_matches_data[k] = v
@@ -741,7 +879,6 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     advanced_attempted = progressive_attempted + to_final_third_total
     advanced_accuracy_pct = (advanced_successful / advanced_attempted * 100.0) if advanced_attempted else 0.0
     advanced_passes_p90 = round((progressive_total + to_final_third_success) * p90_factor, 2)
-
     return {
         "total_passes": total,
         "successful_passes": successful,
@@ -799,7 +936,6 @@ def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
     funnel_df = df[df["in_funnel"]]
     funnel_successful = int(funnel_df["is_duel_won"].sum() + funnel_df["is_interception"].sum())
     funnel_success_pct = (funnel_successful / funnel_total * 100.0) if funnel_total > 0 else 0.0
-
     return {
         "total_actions": total_actions,
         "total_actions_p90": round(total_actions * p90_factor, 1),
@@ -833,37 +969,37 @@ def _arrow_html(val_game: float, val_avg: float) -> str:
         return ""
     if val_game > val_avg:
         pct = _safe_pct_diff(val_game, val_avg)
-        return f' <span style="color:#10b981">▲ +{pct:.0f}%</span>'
+        return f' <span class="cmp-arrow" style="color:#10b981;">▲ +{pct:.0f}%</span>'
     else:
         pct = _safe_pct_diff(val_avg, val_game)
-        return f' <span style="color:#E07070">▼ -{pct:.0f}%</span>'
+        return f' <span class="cmp-arrow" style="color:#E07070;">▼ -{pct:.0f}%</span>'
 
 def section_card(title, border_color, items):
     bg = _hex_to_rgba(border_color, 0.55)
     bd = _hex_to_rgba(border_color, 0.30)
-    html = f'<div style="background:linear-gradient(135deg,{bg},{_hex_to_rgba(border_color,0.20)});border:1px solid {bd};border-radius:10px;padding:14px 16px;margin-bottom:12px">'
-    html += f'<div style="color:#f0f0f8;font-size:15px;font-weight:700;margin-bottom:8px;letter-spacing:0.3px">{title}</div>'
-    html += f'<div style="display:flex;flex-direction:column;gap:2px">'
+    html = f'<div class="section-card" style="border-left: 3px solid {border_color};">'
+    html += f'<div class="section-title">{title}</div>'
+    html += f'<div>'
     for idx, item in enumerate(items):
         label = item[0]; value = item[1]; sub = item[2] if len(item) > 2 else ""; tooltip = item[3] if len(item) > 3 else ""
         is_last = idx == len(items) - 1
         sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
         html += f'<div {sep}>'
         if tooltip:
-            label_html = f'<span style="color:#b0b0c8;font-size:12px;font-weight:500">{label} <span title="{tooltip}" style="color:#6a6a8a;cursor:help;font-size:11px">ⓘ</span></span>'
+            label_html = f'{label} <span class="tooltip-icon" title="{tooltip}">?</span>'
+            html += f'<span class="section-label">{label_html}</span><span class="section-value">{value}</span>'
         else:
-            label_html = f'<span style="color:#b0b0c8;font-size:12px;font-weight:500">{label}</span>'
-        html += f'{label_html}<div style="color:#f0f0f8;font-size:16px;font-weight:700;margin-top:1px">{value}</div>'
+            html += f'<span class="section-label">{label}</span><span class="section-value">{value}</span>'
         if sub:
-            html += f'<div style="color:#7a7a9a;font-size:11px;margin-top:1px">{sub}</div>'
+            html += f'<div class="section-sub">{sub}</div>'
         html += '</div>'
     html += '</div></div>'
     st.markdown(html, unsafe_allow_html=True)
 
 def cmp_section_card(title, border_color, items):
     bg = _hex_to_rgba(border_color, 0.55); bd = _hex_to_rgba(border_color, 0.30)
-    html = f'<div style="background:linear-gradient(135deg,{bg},{_hex_to_rgba(border_color,0.20)});border:1px solid {bd};border-radius:10px;padding:14px 16px;margin-bottom:12px">'
-    html += f'<div style="color:#f0f0f8;font-size:15px;font-weight:700;margin-bottom:8px;letter-spacing:0.3px">{title}</div>'
+    html = f'<div class="section-card" style="border-left: 3px solid {border_color};">'
+    html += f'<div class="section-title">{title}</div>'
     for idx, item in enumerate(items):
         label=item[0]; val_game=item[1]; val_avg=item[2]
         disp_game=item[3] if len(item)>3 else str(val_game)
@@ -873,13 +1009,13 @@ def cmp_section_card(title, border_color, items):
         is_last=idx==len(items)-1; sep="" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
         html+=f'<div {sep}>'
         if tooltip:
-            label_html=f'<span style="color:#b0b0c8;font-size:12px;font-weight:500">{label} <span title="{tooltip}" style="color:#6a6a8a;cursor:help;font-size:11px">ⓘ</span></span>'
+            label_html=f'{label} <span class="tooltip-icon" title="{tooltip}">?</span>'
+            html+=f'<span class="section-label">{label_html}</span><span class="section-value">{disp_game}</span>'
         else:
-            label_html=f'<span style="color:#b0b0c8;font-size:12px;font-weight:500">{label}</span>'
-        html+=f'{label_html}<div style="color:#f0f0f8;font-size:16px;font-weight:700;margin-top:1px">{disp_game}{_arrow_html(float(val_game),float(val_avg))}</div>'
-        html+=f'<div style="color:#7a7a9a;font-size:11px;margin-top:1px">AVG: {disp_avg}</div>'
+            html+=f'<span class="section-label">{label}</span><span class="section-value">{disp_game}{_arrow_html(float(val_game),float(val_avg))}</span>'
+        html+=f'<div class="section-sub">AVG: {disp_avg}</div>'
         if sub:
-            html+=f'<div style="color:#6a6a8a;font-size:10px;margin-top:1px">{sub}</div>'
+            html+=f'<div class="section-sub">{sub}</div>'
         html+='</div>'
     html+='</div>'
     st.markdown(html, unsafe_allow_html=True)
@@ -888,12 +1024,8 @@ def cmp_section_card(title, border_color, items):
 def _pdf_add_footer(fig, page_num, total_pages):
     ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999)
     ax.axis("off")
-    ax.text(0, 0.5, "Hudson Cicala — 2026 Season",
-            ha="left", va="center", fontsize=7, color=PDF_TEXT_DIM,
-            transform=ax.transAxes)
-    ax.text(1, 0.5, f"{page_num}/{total_pages}",
-            ha="right", va="center", fontsize=7, color=PDF_TEXT_DIM,
-            transform=ax.transAxes)
+    ax.text(0, 0.5, "Hudson Cicala — 2026 Season", ha="left", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax.text(1, 0.5, f"{page_num}/{total_pages}", ha="right", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
     ax.plot([0, 1], [1, 1], color="#3a3a5c", linewidth=0.4, transform=ax.transAxes)
 
 def export_dashboard_pdf(passes_images, def_images):
@@ -903,8 +1035,7 @@ def export_dashboard_pdf(passes_images, def_images):
     with PdfPages(buf) as pdf:
         # ── PAGE 1: PASSES ──
         fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle("Passes Analysis", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE,
-                     y=0.97, x=0.06, ha="left")
+        fig.suptitle("Passes Analysis", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
         labels_p = ["Pass Map", "Zone Heatmap (Destination)", "Top 10 Pass Impact"]
         for i, img in enumerate(passes_images):
             left = 0.03 + i * 0.33
@@ -912,17 +1043,14 @@ def export_dashboard_pdf(passes_images, def_images):
             ax_img = fig.add_axes([left, 0.12, width, 0.78])
             ax_img.imshow(img)
             ax_img.axis("off")
-            ax_img.text(0.5, 1.01, labels_p[i], ha="center", va="bottom",
-                        fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT,
-                        transform=ax_img.transAxes)
+            ax_img.text(0.5, 1.01, labels_p[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
         _pdf_add_footer(fig, 1, total_pages)
         pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
         plt.close(fig)
 
         # ── PAGE 2: DEFENSIVE ──
         fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle("Defensive Actions", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE,
-                     y=0.97, x=0.06, ha="left")
+        fig.suptitle("Defensive Actions", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
         labels_d = ["Defensive Actions Map", "Defensive Heatmap", "Funnel Protection Actions"]
         for i, img in enumerate(def_images):
             left = 0.03 + i * 0.33
@@ -930,13 +1058,10 @@ def export_dashboard_pdf(passes_images, def_images):
             ax_img = fig.add_axes([left, 0.12, width, 0.78])
             ax_img.imshow(img)
             ax_img.axis("off")
-            ax_img.text(0.5, 1.01, labels_d[i], ha="center", va="bottom",
-                        fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT,
-                        transform=ax_img.transAxes)
+            ax_img.text(0.5, 1.01, labels_d[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
         _pdf_add_footer(fig, 2, total_pages)
         pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
         plt.close(fig)
-
     buf.seek(0)
     return buf
 
@@ -951,12 +1076,10 @@ def _base_pitch(bg="#1a1a2e"):
 
 def _attack_arrow(fig, has_cbar=False):
     ox = -0.04 if has_cbar else 0.0
-    fig.patches.append(FancyArrowPatch(
-        (0.44 + ox, 0.045), (0.56 + ox, 0.045),
-        transform=fig.transFigure, arrowstyle="-|>", mutation_scale=11,
-        linewidth=1.6, color="#aaaaaa"))
-    fig.text(0.50 + ox, 0.012, "Attacking Direction", ha="center", va="bottom",
-             transform=fig.transFigure, fontsize=7.5, color="#aaaaaa")
+    fig.patches.append(FancyArrowPatch((0.44 + ox, 0.045), (0.56 + ox, 0.045), transform=fig.transFigure,
+                                        arrowstyle="-|>", mutation_scale=11, linewidth=1.6, color="#aaaaaa"))
+    fig.text(0.50 + ox, 0.012, "Attacking Direction", ha="center", va="bottom", transform=fig.transFigure,
+             fontsize=7.5, color="#aaaaaa")
 
 def _save_fig(fig):
     fig.canvas.draw(); buf = BytesIO()
@@ -974,18 +1097,15 @@ def draw_pass_map(df):
         else:
             color, alpha = COLOR_SUCCESS, ALPHA_SUCCESS
         pitch.arrows(row["x_start"], row["y_start"], row["x_end"], row["y_end"],
-                     color=color, width=1.3, headwidth=2.0, headlength=2.0,
-                     ax=ax, zorder=3, alpha=alpha)
+                     color=color, width=1.3, headwidth=2.0, headlength=2.0, ax=ax, zorder=3, alpha=alpha)
         pitch.scatter(row["x_start"], row["y_start"], s=32, marker="o",
-                      color=color, edgecolors="white", linewidths=0.6,
-                      ax=ax, zorder=6, alpha=alpha)
+                      color=color, edgecolors="white", linewidths=0.6, ax=ax, zorder=6, alpha=alpha)
     leg = ax.legend(handles=[
         Line2D([0],[0],color=COLOR_SUCCESS,lw=2.0,label="Completed",alpha=0.65),
         Line2D([0],[0],color=COLOR_PROGRESSIVE,lw=2.0,label="Progressive",alpha=0.90),
         Line2D([0],[0],color=COLOR_FAIL,lw=2.0,label="Incomplete",alpha=0.90)
     ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,
-                    facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,
-                    labelspacing=0.35,borderpad=0.4)
+                    facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,labelspacing=0.35,borderpad=0.4)
     for t in leg.get_texts(): t.set_color("white")
     leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
     return _save_fig(fig), fig
@@ -993,16 +1113,13 @@ def draw_pass_map(df):
 def draw_corridor_heatmap(df):
     df_s = df[df["is_won"]].copy()
     x_bins = np.linspace(0.0, FIELD_X, 7)
-    corridors = {"left": (LANE_LEFT_MIN, FIELD_Y),
-                 "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
-                 "right": (0.0, LANE_RIGHT_MAX)}
+    corridors = {"left": (LANE_LEFT_MIN, FIELD_Y), "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN), "right": (0.0, LANE_RIGHT_MAX)}
     counts = {}
     for cname, (y0, y1) in corridors.items():
         arr = np.zeros(6, dtype=int)
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]
-            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) &
-                          (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
+            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
         counts[cname] = arr
     all_vals = np.concatenate([counts[c] for c in counts]); vmax = max(1, int(all_vals.max()))
     cmap = LinearSegmentedColormap.from_list("wr", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
@@ -1012,10 +1129,8 @@ def draw_corridor_heatmap(df):
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]; value = counts[cname][i]
             ax.add_patch(Rectangle((x0_, y0), x1_ - x0_, y1 - y0,
-                                   facecolor=cmap(norm(value)),
-                                   edgecolor=(1,1,1,0.12), lw=0.5, alpha=0.95, zorder=2))
-            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value),
-                    ha="center", va="center",
+                                    facecolor=cmap(norm(value)), edgecolor=(1,1,1,0.12), lw=0.5, alpha=0.95, zorder=2))
+            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center",
                     color="#000000" if value <= threshold else "#ffffff",
                     fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
@@ -1033,14 +1148,11 @@ def _draw_comet_arrow(ax, x0, y0, x1, y1, color):
 
 def draw_top_xt_map(df, top_n=5):
     fig, ax, pitch = _base_pitch()
-    top_passes = (df[(df["is_won"])&(df["delta_xt_adj"]>0)]
-                  .sort_values("delta_xt_adj",ascending=False)
-                  .head(top_n).copy().reset_index(drop=True))
+    top_passes = (df[(df["is_won"])&(df["delta_xt_adj"]>0)].sort_values("delta_xt_adj",ascending=False).head(top_n).copy().reset_index(drop=True))
     if not top_passes.empty:
         for _, row in top_passes.iterrows():
             val = float(row["delta_xt_adj"]); color = CMAP_TOP10(NORM_TOP10(np.clip(val,0.05,0.40)))
-            _draw_comet_arrow(ax,float(row["x_start"]),float(row["y_start"]),
-                              float(row["x_end"]),float(row["y_end"]),color)
+            _draw_comet_arrow(ax,float(row["x_start"]),float(row["y_start"]),float(row["x_end"]),float(row["y_end"]),color)
     sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10,norm=NORM_TOP10)
     cbar=fig.colorbar(sm,ax=ax,fraction=0.020,pad=0.02,shrink=0.60); cbar.set_label("Pass Impact",color="#ffffff",fontsize=8)
     cbar.ax.yaxis.set_tick_params(color="#ffffff",labelsize=7); plt.setp(plt.getp(cbar.ax.axes,"yticklabels"),color="#ffffff")
@@ -1064,9 +1176,8 @@ def draw_defensive_map(df):
         Line2D([0],[0],marker="o",color="w",markerfacecolor=COLOR_DUEL_WON,markersize=7,label="Duel Won",alpha=0.90),
         Line2D([0],[0],marker="X",color="w",markerfacecolor=COLOR_DUEL_LOST,markersize=8,label="Duel Lost",alpha=0.90),
         Line2D([0],[0],marker="^",color="w",markerfacecolor=COLOR_INTERCEPTION,markersize=7,label="Interception",alpha=0.90)
-    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,
-                  facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,
-                  labelspacing=0.35,borderpad=0.4)
+    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",edgecolor="#444466",
+      fontsize=6.5,labelspacing=0.35,borderpad=0.4)
     for t in leg.get_texts(): t.set_color("white")
     leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
     return _save_fig(fig), fig
@@ -1086,9 +1197,8 @@ def draw_funnel_protection_map(df):
     leg=ax.legend(handles=[
         Line2D([0],[0],marker="*",color="w",markerfacecolor="#ffd700",markersize=9,label="Funnel Action",alpha=0.95),
         Line2D([0],[0],marker="o",color="w",markerfacecolor="#888888",markersize=6,label="Other Action",alpha=0.50)
-    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,
-                  facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,
-                  labelspacing=0.35,borderpad=0.4)
+    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",edgecolor="#444466",
+      fontsize=6.5,labelspacing=0.35,borderpad=0.4)
     for t in leg.get_texts(): t.set_color("white")
     leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
     return _save_fig(fig), fig
@@ -1097,35 +1207,42 @@ def draw_defensive_heatmap(df):
     corridors={"Right":(LANE_LEFT_MIN,FIELD_Y),"Center":(LANE_RIGHT_MAX,LANE_LEFT_MIN),"Left":(0.0,LANE_RIGHT_MAX)}
     corridor_data={}
     for cname,(y0,y1) in corridors.items():
-        mask=(df["y"]>=y0)&(df["y"]<y1); sub=df[mask]
-        total=len(sub); dw=int(sub["is_duel_won"].sum()); dl=int(sub["is_duel_lost"].sum())
-        inter=int(sub["is_interception"].sum()); dpct=(dw/(dw+dl)*100) if (dw+dl)>0 else None
-        corridor_data[cname]={"total":total,"duels_won":dw,"duels_lost":dl,"interceptions":inter,"duel_pct":dpct}
-    vals=[corridor_data[c]["total"] for c in corridor_data]; vmax=max(1,max(vals)); threshold=max(1,int(vmax*0.35))
-    cmap = LinearSegmentedColormap.from_list("bw", ["#ffffff", "#e0edff", "#b3d1ff", "#66a3ff", "#1a75ff", "#0047cc"])
-    norm=Normalize(vmin=0,vmax=vmax)
+        mask=(df["y"]>=y0)&(df["y"]<y1)
+        sub=df[mask]
+        value=len(sub)
+        duels_won=int(sub["is_duel_won"].sum()); duels_lost=int(sub["is_duel_lost"].sum())
+        corridor_data[cname]=value
+        corridor_data[f"{cname}_won"]=duels_won; corridor_data[f"{cname}_lost"]=duels_lost
+    vals=list(corridor_data[c] for c in corridors); vmax=max(1,max(vals))
+    cmap = LinearSegmentedColormap.from_list("db", ["#ffffff", "#e0edff", "#8bb8f8", "#3b82f6", "#1e40af", "#0f172a"])
+    norm=Normalize(vmin=0,vmax=vmax); threshold=max(1,vmax*0.35)
     fig,ax,pitch=_base_pitch()
+    x_bins=np.linspace(0.0,FIELD_X,7)
     for cname,(y0,y1) in corridors.items():
-        c=corridor_data[cname]; value=c["total"]
-        ax.add_patch(Rectangle((0,y0),FIELD_X,y1-y0,
-                               facecolor=cmap(norm(value)),edgecolor=(1,1,1,0.12),lw=0.5,alpha=0.95,zorder=2))
-        duel_pct=c["duel_pct"]
-        label=f"{cname}\nTotal: {value}"
-        if duel_pct is not None:
-            label+=f"\nWon: {c['duels_won']}/{c['duels_won']+c['duels_lost']} ({duel_pct:.0f}%)"
-        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",
-                color="#000000" if value<=threshold else "#ffffff",
-                fontsize=9,fontweight="600",zorder=4)
+        for i in range(6):
+            x0_,x1_=x_bins[i],x_bins[i+1];
+            mask=(df["y"]>=y0)&(df["y"]<y1)&(df["x"]>=x0_)&(df["x"]<x1_)
+            sub=df[mask]; value=len(sub)
+            ax.add_patch(Rectangle((x0_,y0),x1_-x0_,y1-y0,facecolor=cmap(norm(value)),edgecolor=(1,1,1,0.12),lw=0.5,alpha=0.95,zorder=2))
+            if value>0:
+                c=corridor_data[cname]; dw=corridor_data[f"{cname}_won"]
+                dl=corridor_data[f"{cname}_lost"]; duel_pct=(dw/(dw+dl)*100) if (dw+dl)>0 else None
+                label=f"{cname}\nTotal: {value}\nWon: {dw}/{dw+dl} ({duel_pct:.0f}%)" if duel_pct is not None else f"{cname}\nTotal: {value}"
+                ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",
+                        color="#000000" if value<=threshold else "#ffffff",
+                        fontsize=9,fontweight="600",zorder=4)
     ax.axhline(y=LANE_LEFT_MIN,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
 
 # SIDEBAR
 st.sidebar.markdown("""
-<div style="margin-bottom:12px">
-<div style="color:#b0b0c8;font-size:10px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase">Pass Stats</div>
-<div style="color:#f0f0f8;font-size:22px;font-weight:800;line-height:1.15">Dashboard<br>2026 Season</div>
-<div style="color:#7a7a9a;font-size:13px;font-weight:500;margin-top:2px">Hudson Cicala</div>
+<div>
+    <div class="sidebar-title">Pass Stats</div>
+    <div class="sidebar-subtitle">Dashboard</div>
+    <div style="margin: 4px 0 8px 0; height: 1px; background: linear-gradient(90deg, #2a2a4a, transparent);"></div>
+    <div class="sidebar-stat">2026 Season</div>
+    <div class="sidebar-stat">Hudson Cicala</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1134,8 +1251,8 @@ if os.path.exists(img_path):
     st.sidebar.image(img_path, use_container_width=True)
 
 st.sidebar.markdown("""
-<div style="color:#6a6a8a;font-size:11px;border-top:1px solid #2a2a4e;padding-top:10px;margin-top:10px">
-Data collected from match footage
+<div style="margin-top: 16px;">
+    <div class="sidebar-stat" style="font-size: 11px; color: #3a3a5c; line-height: 1.4;">Data collected from match footage</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1156,7 +1273,7 @@ with tab_dash:
             selected_match = st.selectbox("Select Match", options=pass_match_options, index=0, key="pass_match")
         with col_f2:
             pass_filter = st.radio("Pass Type", ["All", "Successful", "Unsuccessful", "Progressive", "Final Third"],
-                                   index=0, horizontal=True, key="pass_filter")
+                                    index=0, horizontal=True, key="pass_filter")
 
         if selected_match == "All Matches":
             df_game_filtered = pd.concat(dfs_by_match.values(), ignore_index=True)
@@ -1187,7 +1304,6 @@ with tab_dash:
                     s_avg[k] = 0
         else:
             s_avg = s_game.copy()
-
         force_avg = selected_match == "All Matches"
         if force_avg:
             s_game = s_avg.copy()
@@ -1200,21 +1316,22 @@ with tab_dash:
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
-            st.markdown('<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">Pass Map</div>',unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><div class="plot-label">📋 Pass Map</div>', unsafe_allow_html=True)
             st.image(img_pm_game,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col_m2:
-            st.markdown('<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">Zone Heatmap (Destination)</div>',unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><div class="plot-label">📊 Zone Heatmap (Destination)</div>', unsafe_allow_html=True)
             st.image(img_ht_game,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col_m3:
             label="Top 10" if force_avg else "Top 5"
-            st.markdown(f'<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">{label} Pass Impact</div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="plot-container"><div class="plot-label">⚡ {label} Pass Impact</div>', unsafe_allow_html=True)
             st.image(img_xt_game,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
+        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
         col_s1, col_s2, col_s3 = st.columns(3)
         total_impact_value = float(df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
-
         if force_avg:
             with col_s1:
                 section_card("📋 Pass Overview",C_BLUE_PASTEL,[
@@ -1234,14 +1351,11 @@ with tab_dash:
             col_s3_exp=st.columns(3)[2]
             with col_s3_exp:
                 expl_bg=_hex_to_rgba(C_AMBER_PASTEL,0.35); expl_bd=_hex_to_rgba(C_AMBER_PASTEL,0.20)
-                st.markdown(f'''
-                <div style="background:{expl_bg};border:1px solid {expl_bd};border-radius:8px;padding:10px 12px;margin-top:4px">
-                <div style="color:#d0d0e8;font-size:11px;font-weight:600;margin-bottom:4px">Explanation</div>
-                <div style="color:#9a9aba;font-size:10px;line-height:1.5">
-                <b>Pass Impact Value</b> — Calculation used to evaluate the offensive value added by a pass.<br>
-                <b>% Positive Impact</b> — Passes that generated a positive impact based on where they ended on the field.
-                </div></div>
-                ''',unsafe_allow_html=True)
+                st.markdown(f'<div class="explanation-card" style="border-left: 3px solid #d4a843;">'
+                            '<div class="explanation-title" style="color:#d4a843;">Explanation</div>'
+                            'Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>'
+                            '% Positive Impact — Passes that generated a positive impact based on where they ended on the field.'
+                            '</div>',unsafe_allow_html=True)
         else:
             with col_s1:
                 cmp_section_card("📋 Pass Overview",C_BLUE_PASTEL,[
@@ -1261,14 +1375,11 @@ with tab_dash:
             col_s3_exp=st.columns(3)[2]
             with col_s3_exp:
                 expl_bg=_hex_to_rgba(C_AMBER_PASTEL,0.35); expl_bd=_hex_to_rgba(C_AMBER_PASTEL,0.20)
-                st.markdown(f'''
-                <div style="background:{expl_bg};border:1px solid {expl_bd};border-radius:8px;padding:10px 12px;margin-top:4px">
-                <div style="color:#d0d0e8;font-size:11px;font-weight:600;margin-bottom:4px">Explanation</div>
-                <div style="color:#9a9aba;font-size:10px;line-height:1.5">
-                <b>Pass Impact Value</b> — Calculation used to evaluate the offensive value added by a pass.<br>
-                <b>% Positive Impact</b> — Passes that generated a positive impact based on where they ended on the field.
-                </div></div>
-                ''',unsafe_allow_html=True)
+                st.markdown(f'<div class="explanation-card" style="border-left: 3px solid #d4a843;">'
+                            '<div class="explanation-title" style="color:#d4a843;">Explanation</div>'
+                            'Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>'
+                            '% Positive Impact — Passes that generated a positive impact based on where they ended on the field.'
+                            '</div>',unsafe_allow_html=True)
 
     with sub_tab_def:
         st.markdown("### Match Filter")
@@ -1304,7 +1415,6 @@ with tab_dash:
                     d_avg[k]=0
         else:
             d_avg=d_game.copy()
-
         force_avg_def=selected_def_match=="All Matches"
         if force_avg_def:
             d_game=d_avg.copy()
@@ -1316,19 +1426,20 @@ with tab_dash:
 
         col_dm1,col_dm2,col_dm3=st.columns(3)
         with col_dm1:
-            st.markdown('<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">Defensive Actions Map</div>',unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><div class="plot-label">🛡️ Defensive Actions Map</div>', unsafe_allow_html=True)
             st.image(img_def_map,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col_dm2:
-            st.markdown('<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">Defensive Heatmap</div>',unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><div class="plot-label">📊 Defensive Heatmap</div>', unsafe_allow_html=True)
             st.image(img_def_hm,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col_dm3:
-            st.markdown('<div style="color:#f0f0f8;font-size:13px;font-weight:600;margin-bottom:4px">Funnel Protection Actions</div>',unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><div class="plot-label">🎯 Funnel Protection Actions</div>', unsafe_allow_html=True)
             st.image(img_funnel,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
+        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
         col_ds1,col_ds2,col_ds3=st.columns(3)
-
         if force_avg_def:
             with col_ds1:
                 section_card("🛡️ General",C_BLUE_PASTEL,[
@@ -1364,30 +1475,30 @@ with tab_dash:
                     ("%FPA Successful",d_game["funnel_success_pct"],d_avg["funnel_success_pct"],f"{d_game['funnel_success_pct']:.1f}%",f"{d_avg['funnel_success_pct']:.1f}%")
                 ])
 
-    # ── PDF EXPORT SECTION ──
-    st.markdown("---")
-    st.markdown("### 📄 Export Complete Dashboard")
-    if st.button("📸 Download Screenshot (PDF) — Passes + Defensive Actions", use_container_width=True):
-        with st.spinner("Generating PDF with dashboard screenshots..."):
-            df_all_passes = pd.concat(dfs_by_match.values(), ignore_index=True)
-            df_all_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
+        # ── PDF EXPORT SECTION ──
+        st.markdown("---")
+        st.markdown("### 📄 Export Complete Dashboard")
+        if st.button("📸 Download Screenshot (PDF) — Passes + Defensive Actions", use_container_width=True):
+            with st.spinner("Generating PDF with dashboard screenshots..."):
+                df_all_passes = pd.concat(dfs_by_match.values(), ignore_index=True)
+                df_all_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
 
-            img_pm_all, _ = draw_pass_map(df_all_passes); plt.close()
-            img_ht_all, _ = draw_corridor_heatmap(df_all_passes); plt.close()
-            img_xt_all, _ = draw_top_xt_map(df_all_passes, top_n=10); plt.close()
-            img_dm_all, _ = draw_defensive_map(df_all_def); plt.close()
-            img_dhm_all, _ = draw_defensive_heatmap(df_all_def); plt.close()
-            img_fn_all, _ = draw_funnel_protection_map(df_all_def); plt.close()
+                img_pm_all, _ = draw_pass_map(df_all_passes); plt.close()
+                img_ht_all, _ = draw_corridor_heatmap(df_all_passes); plt.close()
+                img_xt_all, _ = draw_top_xt_map(df_all_passes, top_n=10); plt.close()
+                img_dm_all, _ = draw_defensive_map(df_all_def); plt.close()
+                img_dhm_all, _ = draw_defensive_heatmap(df_all_def); plt.close()
+                img_fn_all, _ = draw_funnel_protection_map(df_all_def); plt.close()
 
-            pdf_bytes = export_dashboard_pdf(
-                [img_pm_all, img_ht_all, img_xt_all],
-                [img_dm_all, img_dhm_all, img_fn_all]
-            )
+                pdf_bytes = export_dashboard_pdf(
+                    [img_pm_all, img_ht_all, img_xt_all],
+                    [img_dm_all, img_dhm_all, img_fn_all]
+                )
 
-            st.download_button(
-                "📥 Save PDF",
-                data=pdf_bytes,
-                file_name="hudson_cicala_dashboard.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+                st.download_button(
+                    "📥 Save PDF",
+                    data=pdf_bytes,
+                    file_name="hudson_cicala_dashboard.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
