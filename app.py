@@ -814,9 +814,9 @@ def section_card(title, border_color, items):
         if tooltip:
             label_html = f'{label}'
             label_html += f'<span style="cursor:help;font-size:11px;color:#8888aa;margin-left:3px;border:1px solid #8888aa;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center" title="{tooltip}">?</span>'
-            html += f'<div style="font-size:13px;color:#c8c8dd">{label_html}</div>'
+            html += f'<div style="font-size:13px;color:#d8d8ee">{label_html}</div>'
         else:
-            html += f'<div style="font-size:13px;color:#c8c8dd">{label}</div>'
+            html += f'<div style="font-size:13px;color:#d8d8ee">{label}</div>'
         html += f'<div style="font-size:16px;font-weight:700;color:#ffffff">{value}</div>'
         html += '</div>'
         if sub:
@@ -846,9 +846,9 @@ def cmp_section_card(title, border_color, items):
         if tooltip:
             label_html = f'{label}'
             label_html += f'<span style="cursor:help;font-size:11px;color:#8888aa;margin-left:3px;border:1px solid #8888aa;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center" title="{tooltip}">?</span>'
-            html += f'<div style="font-size:13px;color:#c8c8dd">{label_html}</div>'
+            html += f'<div style="font-size:13px;color:#d8d8ee">{label_html}</div>'
         else:
-            html += f'<div style="font-size:13px;color:#c8c8dd">{label}</div>'
+            html += f'<div style="font-size:13px;color:#d8d8ee">{label}</div>'
         html += f'<div style="font-size:16px;font-weight:700;color:#ffffff">{disp_game}{arrow}</div>'
         html += '</div>'
         html += f'<div style="font-size:11px;color:#8888aa;margin-top:2px">AVG: {disp_avg}</div>'
@@ -1048,10 +1048,11 @@ def draw_funnel_protection_map(df):
     return _save_fig(fig), fig
 
 def draw_defensive_heatmap(df):
+    # Inverted corridors: "Right" = top of field (y >= LANE_LEFT_MIN), "Left" = bottom (y < LANE_RIGHT_MAX)
     corridors = {
-        "Left": (LANE_LEFT_MIN, FIELD_Y),
+        "Right": (LANE_LEFT_MIN, FIELD_Y),
         "Center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
-        "Right": (0.0, LANE_RIGHT_MAX),
+        "Left": (0.0, LANE_RIGHT_MAX),
     }
     corridor_data = {}
     for cname, (y0, y1) in corridors.items():
@@ -1087,6 +1088,116 @@ def draw_defensive_heatmap(df):
     _attack_arrow(fig)
     return _save_fig(fig), fig
 
+# PDF EXPORT FUNCTION
+def export_report_pdf():
+    """Generate a PDF report with current Passes and Defensive Actions data."""
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    buf = BytesIO()
+    with PdfPages(buf) as pdf:
+        # --- PASSES SECTION ---
+        fig_pass_overview, axes = plt.subplots(1, 3, figsize=(18, 4), facecolor="#1a1a2e")
+        fig_pass_overview.suptitle("Passes Overview — All Matches", color="#ffffff", fontsize=16, fontweight=600, y=0.98)
+
+        all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
+        stats_all = compute_stats(all_pass_df, "All Matches")
+
+        stat_groups = [
+            ("📋 Pass Overview", ["Total Passes", "Successful %"]),
+            ("📊 Advanced", ["Advanced Passes", "% Advanced Accuracy"]),
+            ("⚡ Impact", ["Pass Impact Value", "% Positive Impact"]),
+        ]
+        stat_values = {
+            "Total Passes": f"{stats_all['total_p90']:.1f}",
+            "Successful %": f"{stats_all['accuracy_pct']:.1f}%",
+            "Advanced Passes": f"{stats_all['advanced_passes_p90']:.1f}",
+            "% Advanced Accuracy": f"{stats_all['advanced_accuracy_pct']:.1f}%",
+            "Pass Impact Value": f"{stats_all['xt_p90']:.3f}",
+            "% Positive Impact": f"{stats_all['pos_pct']:.1f}%",
+        }
+
+        for idx, (title, items) in enumerate(stat_groups):
+            ax = axes[idx]
+            ax.set_facecolor("#1a1a2e")
+            ax.axis("off")
+            text_lines = [f"{title}\n" + "─" * 25]
+            for item in items:
+                text_lines.append(f"{item}:  {stat_values[item]}")
+            ax.text(0.5, 0.5, "\n".join(text_lines), ha="center", va="center",
+                    fontsize=11, color="#d8d8ee", transform=ax.transAxes,
+                    fontfamily="monospace")
+
+        pdf.savefig(fig_pass_overview, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_pass_overview)
+
+        # Pass maps
+        img_pm, fig_pm = draw_pass_map(all_pass_df)
+        pdf.savefig(fig_pm, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_pm)
+
+        # Corridor heatmap
+        img_ch, fig_ch = draw_corridor_heatmap(all_pass_df)
+        pdf.savefig(fig_ch, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_ch)
+
+        # Top XT
+        img_xt, fig_xt = draw_top_xt_map(all_pass_df, top_n=10)
+        pdf.savefig(fig_xt, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_xt)
+
+        # --- DEFENSIVE SECTION ---
+        fig_def_overview, axes_def = plt.subplots(1, 3, figsize=(18, 4), facecolor="#1a1a2e")
+        fig_def_overview.suptitle("Defensive Actions — All Matches", color="#ffffff", fontsize=16, fontweight=600, y=0.98)
+
+        all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
+        def_stats = compute_defensive_stats(all_def_df, "All Matches")
+
+        def_stat_groups = [
+            ("🛡️ General", ["Defensive Actions", "Actions in Opp. Field"]),
+            ("⚔️ Duels", ["Defensive Duels", "% Duels Won"]),
+            ("👁️ Interceptions", ["Interceptions", "Interceptions in Opp Field"]),
+        ]
+        def_stat_values = {
+            "Defensive Actions": f"{def_stats['total_actions_p90']:.1f}",
+            "Actions in Opp. Field": f"{def_stats['actions_attacking_p90']:.1f}",
+            "Defensive Duels": f"{def_stats['duels_p90']:.1f}",
+            "% Duels Won": f"{def_stats['duels_won_pct']:.1f}%",
+            "Interceptions": f"{def_stats['interceptions_p90']:.1f}",
+            "Interceptions in Opp Field": f"{def_stats['interceptions_attacking_p90']:.1f}",
+        }
+
+        for idx, (title, items) in enumerate(def_stat_groups):
+            ax = axes_def[idx]
+            ax.set_facecolor("#1a1a2e")
+            ax.axis("off")
+            text_lines = [f"{title}\n" + "─" * 25]
+            for item in items:
+                text_lines.append(f"{item}:  {def_stat_values[item]}")
+            ax.text(0.5, 0.5, "\n".join(text_lines), ha="center", va="center",
+                    fontsize=11, color="#d8d8ee", transform=ax.transAxes,
+                    fontfamily="monospace")
+
+        pdf.savefig(fig_def_overview, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_def_overview)
+
+        # Defensive map
+        img_def, fig_def = draw_defensive_map(all_def_df)
+        pdf.savefig(fig_def, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_def)
+
+        # Defensive heatmap
+        img_def_hm, fig_def_hm = draw_defensive_heatmap(all_def_df)
+        pdf.savefig(fig_def_hm, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_def_hm)
+
+        # Funnel map
+        img_fun, fig_fun = draw_funnel_protection_map(all_def_df)
+        pdf.savefig(fig_fun, facecolor="#1a1a2e", bbox_inches="tight")
+        plt.close(fig_fun)
+
+    buf.seek(0)
+    return buf
+
 # SIDEBAR
 st.sidebar.markdown("""
 <div style="text-align:center;margin-bottom:16px">
@@ -1114,6 +1225,18 @@ all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
 tab_dash, = st.tabs(["Detailed Dashboard"])
 
 with tab_dash:
+    # Export PDF button
+    col_export, _ = st.columns([1, 5])
+    with col_export:
+        pdf_buf = export_report_pdf()
+        st.download_button(
+            label="📄 Export Report (PDF)",
+            data=pdf_buf,
+            file_name="hudson_cicala_report.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+
     sub_tab_passes, sub_tab_def = st.tabs(["Passes", "Defensive Actions"])
 
     with sub_tab_passes:
@@ -1203,9 +1326,9 @@ with tab_dash:
             # Explanation box below Impact
             col_s3_exp = st.columns(3)[2]
             with col_s3_exp:
-                expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.25)
-                expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.15)
-                st.markdown(f'<div style="background:linear-gradient(135deg,{expl_bg},rgba(26,26,46,0.80));border:1px solid {expl_bd};border-radius:10px;padding:10px 14px;margin-top:-4px;box-shadow:0 1px 4px rgba(0,0,0,0.10)">'
+                expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.35)
+                expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.20)
+                st.markdown(f'<div style="background:linear-gradient(135deg,{expl_bg},rgba(26,26,46,0.85));border:1px solid {expl_bd};border-radius:10px;padding:10px 14px;margin-top:-4px;box-shadow:0 1px 4px rgba(0,0,0,0.10)">'
                     f'<div style="font-size:11px;font-weight:600;color:#c0c0d8;margin-bottom:6px;letter-spacing:0.3px">Explanation</div>'
                     f'<div style="font-size:10px;color:#a0a0b8;line-height:1.5">'
                     f'<b>Pass Impact Value</b> — Calculation used to evaluate the offensive value added by a pass.<br>'
@@ -1230,9 +1353,9 @@ with tab_dash:
             # Explanation box below Impact
             col_s3_exp = st.columns(3)[2]
             with col_s3_exp:
-                expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.25)
-                expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.15)
-                st.markdown(f'<div style="background:linear-gradient(135deg,{expl_bg},rgba(26,26,46,0.80));border:1px solid {expl_bd};border-radius:10px;padding:10px 14px;margin-top:-4px;box-shadow:0 1px 4px rgba(0,0,0,0.10)">'
+                expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.35)
+                expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.20)
+                st.markdown(f'<div style="background:linear-gradient(135deg,{expl_bg},rgba(26,26,46,0.85));border:1px solid {expl_bd};border-radius:10px;padding:10px 14px;margin-top:-4px;box-shadow:0 1px 4px rgba(0,0,0,0.10)">'
                     f'<div style="font-size:11px;font-weight:600;color:#c0c0d8;margin-bottom:6px;letter-spacing:0.3px">Explanation</div>'
                     f'<div style="font-size:10px;color:#a0a0b8;line-height:1.5">'
                     f'<b>Pass Impact Value</b> — Calculation used to evaluate the offensive value added by a pass.<br>'
@@ -1298,32 +1421,32 @@ with tab_dash:
         if force_avg_def:
             with col_ds1:
                 section_card("🛡️ General", C_BLUE_PASTEL, [
-                    ("Defensive Actions", f"{d_game['total_actions_p90']:.1f}"),
-                    ("Actions in Opp. Field", f"{d_game['actions_attacking_p90']:.1f}"),
+                    ("Defensive Actions (AVG)", f"{d_game['total_actions_p90']:.1f}"),
+                    ("Actions in Opp. Field (AVG)", f"{d_game['actions_attacking_p90']:.1f}"),
                 ])
             with col_ds2:
                 section_card("⚔️ Duels", C_GREEN_PASTEL, [
-                    ("Defensive Duels", f"{d_game['duels_p90']:.1f}"),
+                    ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
                     ("% Duels Won", f"{d_game['duels_won_pct']:.1f}%"),
                 ])
             with col_ds3:
                 section_card("👁️ Interceptions", C_AMBER_PASTEL, [
-                    ("Interceptions", f"{d_game['interceptions_p90']:.1f}"),
-                    ("Interceptions in Opp Field", f"{d_game['interceptions_attacking_p90']:.1f}"),
+                    ("Interceptions (AVG)", f"{d_game['interceptions_p90']:.1f}"),
+                    ("Interceptions in Opp Field (AVG)", f"{d_game['interceptions_attacking_p90']:.1f}"),
                 ])
         else:
             with col_ds1:
                 cmp_section_card("🛡️ General", C_BLUE_PASTEL, [
-                    ("Defensive Actions", d_game["total_actions_p90"], f"{d_avg['total_actions_p90']:.1f}"),
-                    ("Actions in Opp. Field", d_game["actions_attacking_p90"], f"{d_avg['actions_attacking_p90']:.1f}"),
+                    ("Defensive Actions (AVG)", d_game["total_actions_p90"], f"{d_avg['total_actions_p90']:.1f}"),
+                    ("Actions in Opp. Field (AVG)", d_game["actions_attacking_p90"], f"{d_avg['actions_attacking_p90']:.1f}"),
                 ])
             with col_ds2:
                 cmp_section_card("⚔️ Duels", C_GREEN_PASTEL, [
-                    ("Defensive Duels", d_game["duels_p90"], f"{d_avg['duels_p90']:.1f}"),
+                    ("Defensive Duels (AVG)", d_game["duels_p90"], f"{d_avg['duels_p90']:.1f}"),
                     ("% Duels Won", d_game["duels_won_pct"], d_avg["duels_won_pct"], f"{d_game['duels_won_pct']:.1f}%", f"{d_avg['duels_won_pct']:.1f}%"),
                 ])
             with col_ds3:
                 cmp_section_card("👁️ Interceptions", C_AMBER_PASTEL, [
-                    ("Interceptions", d_game["interceptions_p90"], f"{d_avg['interceptions_p90']:.1f}"),
-                    ("Interceptions in Opp Field", d_game["interceptions_attacking_p90"], f"{d_avg['interceptions_attacking_p90']:.1f}"),
+                    ("Interceptions (AVG)", d_game["interceptions_p90"], f"{d_avg['interceptions_p90']:.1f}"),
+                    ("Interceptions in Opp Field (AVG)", d_game["interceptions_attacking_p90"], f"{d_avg['interceptions_attacking_p90']:.1f}"),
                 ])
