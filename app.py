@@ -78,7 +78,7 @@ PDF_PAGE_H = 8.5
 PDF_BG = "#0d0d1f"
 PDF_BG_CARD = "#1a1a30"
 PDF_BG_STAT = "#232340"
-PDF_BORDER = "#3a3a5c"
+PDF_BORDER = "#2d2d50"
 PDF_ACCENT_BLUE = "#4a8fe0"
 PDF_ACCENT_GREEN = "#5abf8a"
 PDF_ACCENT_AMBER = "#d4a843"
@@ -949,147 +949,89 @@ def draw_defensive_heatmap(df):
 
 # ── IMPROVED PDF EXPORT FUNCTIONS ──
 
-LOGO_PATH = "Logo_SGA_Completa_Vertical_Branco.png"
-
 def _pdf_add_footer(fig, page_num, total_pages):
-    """Branded footer with SGA logo and text."""
-    # Thin separator line
-    ax_sep = fig.add_axes([0.06, 0.037, 0.88, 0.002], zorder=999)
-    ax_sep.axis("off")
-    ax_sep.plot([0, 1], [0.5, 0.5], color="#3a3a5c", linewidth=0.4, transform=ax_sep.transAxes)
-
-    # Footer area
-    ax = fig.add_axes([0.06, 0.008, 0.88, 0.028], zorder=999)
-    ax.axis("off")
-
-    # Try to add logo
-    if os.path.exists(LOGO_PATH):
-        try:
-            logo_img = Image.open(LOGO_PATH)
-            ax_logo = fig.add_axes([0.06, 0.005, 0.035, 0.035], zorder=1000)
-            ax_logo.imshow(logo_img)
-            ax_logo.axis("off")
-            # Offset text to the right of logo
-            ax.text(0.055, 0.5, "SGA - Soccer Growth Analytics  |  Hudson Cicala  |  2026 Season",
-                    ha="left", va="center", fontsize=6.5, color=PDF_TEXT_DIM, transform=ax.transAxes)
-        except Exception:
-            # Fallback if logo fails to load
-            ax.text(0, 0.5, "SGA - Soccer Growth Analytics  |  Hudson Cicala  |  2026 Season",
-                    ha="left", va="center", fontsize=6.5, color=PDF_TEXT_DIM, transform=ax.transAxes)
-    else:
-        ax.text(0, 0.5, "SGA - Soccer Growth Analytics  |  Hudson Cicala  |  2026 Season",
-                ha="left", va="center", fontsize=6.5, color=PDF_TEXT_DIM, transform=ax.transAxes)
-
-    # Page number
-    ax.text(1, 0.5, f"{page_num}/{total_pages}", ha="right", va="center",
-            fontsize=6.5, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999); ax.axis("off")
+    ax.text(0,0.5,"Hudson Cicala — 2026 Season",ha="left",va="center",fontsize=7,color=PDF_TEXT_DIM,transform=ax.transAxes)
+    ax.text(1,0.5,f"{page_num}/{total_pages}",ha="right",va="center",fontsize=7,color=PDF_TEXT_DIM,transform=ax.transAxes)
+    ax.plot([0,1],[1,1],color="#3a3a5c",linewidth=0.4,transform=ax.transAxes)
 
 def _pdf_stat_box_rounded(fig, left, bottom, width, height, label, value, accent_color):
-    """Elegant rounded-corner stat card for PDF."""
     ax = fig.add_axes([left, bottom, width, height], zorder=1)
     ax.patch.set_visible(False)
     ax.axis("off")
-    # Rounded background
-    from matplotlib.patches import FancyBboxPatch
-    bbox = FancyBboxPatch((0,0), 1, 1, boxstyle="round,pad=0.05,rounding_size=0.06",
-                          facecolor=PDF_BG_STAT, edgecolor=PDF_BORDER,
-                          linewidth=0.8, transform=ax.transAxes, zorder=1)
+    bbox = FancyBboxPatch((0,0), 1, 1, boxstyle="round,pad=0.04", facecolor=PDF_BG_STAT,
+                          edgecolor=PDF_BORDER, linewidth=0.6, transform=ax.transAxes, zorder=1)
     ax.add_patch(bbox)
-    # Top accent bar with rounded corners
-    accent = FancyBboxPatch((0, 1-0.06), 1, 0.06, boxstyle="round,pad=0.05,rounding_size=0.06",
+    accent = FancyBboxPatch((0, 1-0.055), 1, 0.055, boxstyle="round,pad=0.04",
                             facecolor=accent_color, edgecolor="none",
                             transform=ax.transAxes, clip_on=False, zorder=2)
     ax.add_patch(accent)
-    # Value
     ax.text(0.5, 0.64, value, ha="center", va="center", fontsize=20,
             fontweight=700, color=PDF_TEXT_WHITE, transform=ax.transAxes)
-    # Label
-    ax.text(0.5, 0.26, label, ha="center", va="center", fontsize=7.5,
-            fontweight=500, color=PDF_TEXT_WHITE, transform=ax.transAxes)
+    ax.text(0.5, 0.24, label, ha="center", va="center", fontsize=7.5,
+            fontweight=500, color=PDF_TEXT_LIGHT, transform=ax.transAxes)
     return ax
 
 def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
-    """Professional cover with SGA branding."""
     match_names = list(dfs_by_match.keys())
     fig = plt.figure(figsize=(PDF_PAGE_W, PDF_PAGE_H), facecolor=PDF_BG)
     ax_bg = fig.add_axes([0,0,1,1], zorder=0); ax_bg.set_facecolor(PDF_BG); ax_bg.axis("off")
-
-    # Thin accent line at top
-    ax_bar = fig.add_axes([0.08,0.88,0.84,0.002], zorder=1); ax_bar.axis("off")
-    ax_bar.add_patch(Rectangle((0,0),1,1,facecolor=PDF_ACCENT_BLUE,transform=ax_bar.transAxes,alpha=0.5))
-
-    # SGA Logo at top-left
-    if os.path.exists(LOGO_PATH):
+    ax_bar = fig.add_axes([0,0.90,1,0.003], zorder=1); ax_bar.axis("off")
+    ax_bar.add_patch(Rectangle((0,0),1,1,facecolor=PDF_ACCENT_BLUE,transform=ax_bar.transAxes,alpha=0.7))
+    ax_bar2 = fig.add_axes([0,0.10,1,0.003], zorder=1); ax_bar2.axis("off")
+    ax_bar2.add_patch(Rectangle((0,0),1,1,facecolor=PDF_ACCENT_BLUE,transform=ax_bar2.transAxes,alpha=0.7))
+    if os.path.exists(img_path):
         try:
-            logo_img = Image.open(LOGO_PATH)
-            ax_logo_cover = fig.add_axes([0.08, 0.78, 0.08, 0.08], zorder=3)
-            ax_logo_cover.imshow(logo_img)
-            ax_logo_cover.axis("off")
-        except:
-            pass
-
-    # Main title — placed higher
-    ax_t = fig.add_axes([0.08, 0.40, 0.84, 0.35], zorder=2); ax_t.axis("off")
-    ax_t.text(0, 0.82, "SGA - PERFORMANCE REPORT", ha="left", va="center",
-              fontsize=32, fontweight=800, color=PDF_TEXT_WHITE, transform=ax_t.transAxes)
-    ax_t.text(0, 0.55, "Hudson Cicala", ha="left", va="center",
-              fontsize=26, fontweight=600, color=PDF_ACCENT_BLUE, transform=ax_t.transAxes)
-    ax_t.text(0, 0.32, "Midfielder  |  2026 Season", ha="left", va="center",
-              fontsize=14, color=PDF_TEXT_LIGHT, transform=ax_t.transAxes)
-
-    # Match list
-    ax_ml = fig.add_axes([0.08, 0.06, 0.84, 0.22], zorder=2); ax_ml.axis("off")
-    ax_ml.text(0, 1.0, f"Matches Analyzed: {len(match_names)}", ha="left", va="top",
-               fontsize=11, fontweight=600, color=PDF_ACCENT_BLUE, transform=ax_ml.transAxes)
+            img = Image.open(img_path); ax_img = fig.add_axes([0.05,0.18,0.32,0.68], zorder=3)
+            ax_img.imshow(img); ax_img.axis("off")
+            for s in ax_img.spines.values(): s.set_visible(True); s.set_color(PDF_ACCENT_BLUE); s.set_linewidth(2.5)
+        except: pass
+    ax_t = fig.add_axes([0.42,0.62,0.52,0.26], zorder=2); ax_t.axis("off")
+    ax_t.text(0,0.82,"PERFORMANCE REPORT",ha="left",va="center",fontsize=30,fontweight=800,color=PDF_TEXT_WHITE,transform=ax_t.transAxes)
+    ax_t.text(0,0.52,"Hudson Cicala",ha="left",va="center",fontsize=24,fontweight=600,color=PDF_ACCENT_BLUE,transform=ax_t.transAxes)
+    ax_t.text(0,0.28,"Midfielder | 2026 Season",ha="left",va="center",fontsize=13,color=PDF_TEXT_LIGHT,transform=ax_t.transAxes)
+    ax_ml = fig.add_axes([0.42,0.14,0.52,0.44], zorder=2); ax_ml.axis("off")
+    ax_ml.text(0,1.0,f"Matches Analyzed: {len(match_names)}",ha="left",va="top",fontsize=11,fontweight=600,color=PDF_ACCENT_BLUE,transform=ax_ml.transAxes)
     mid = (len(match_names)+1)//2
     col1 = match_names[:mid]; col2 = match_names[mid:]
     for i, (name1, name2) in enumerate(zip(col1, col2+[""]*(len(col1)-len(col2)))):
-        y = 0.82 - i * 0.09
+        y = 0.85 - i * 0.06
         ax_ml.text(0.02, y, f"• {name1}", ha="left", va="top", fontsize=7.5, color=PDF_TEXT_LIGHT, transform=ax_ml.transAxes)
         ax_ml.text(0.52, y, f"• {name2}" if name2 else "", ha="left", va="top", fontsize=7.5, color=PDF_TEXT_LIGHT, transform=ax_ml.transAxes)
-
+    ax_info = fig.add_axes([0.42,0.04,0.52,0.04], zorder=2); ax_info.axis("off")
+    ax_info.text(0,0.5,"Report generated — June 2026",ha="left",va="center",fontsize=8,color=PDF_TEXT_DIM,transform=ax_info.transAxes)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_stats_page(pdf, page_num=2, total_pages=4):
-    """Stats page with elegant rounded cards and white section titles."""
     all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
     all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
     ps = compute_stats(all_pass_df,"All Matches"); ds = compute_defensive_stats(all_def_df,"All Matches")
     fig = plt.figure(figsize=(PDF_PAGE_W, PDF_PAGE_H), facecolor=PDF_BG)
     fig.suptitle("Season Overview", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
-
-    # ── PASSING STATS ── (white text)
     ax_s1 = fig.add_axes([0.06,0.87,0.30,0.035], zorder=0); ax_s1.axis("off")
-    ax_s1.text(0,0.5,"PASSING STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_TEXT_WHITE)
-    _pdf_stat_box_rounded(fig,0.06,0.78,0.27,0.075,"Total Passes (AVG)",f"{ps['total_p90']:.1f}",PDF_ACCENT_BLUE)
-    _pdf_stat_box_rounded(fig,0.06,0.69,0.27,0.075,"% Accuracy",f"{ps['accuracy_pct']:.1f}%",PDF_ACCENT_BLUE)
-    _pdf_stat_box_rounded(fig,0.365,0.78,0.27,0.075,"Advanced Passes (AVG)",f"{ps['advanced_passes_p90']:.1f}",PDF_ACCENT_GREEN)
-    _pdf_stat_box_rounded(fig,0.365,0.69,0.27,0.075,"% Advanced Accuracy",f"{ps['advanced_accuracy_pct']:.1f}%",PDF_ACCENT_GREEN)
-    _pdf_stat_box_rounded(fig,0.67,0.78,0.27,0.075,"Pass Impact Value (AVG)",f"{ps['xt_p90']:.3f}",PDF_ACCENT_AMBER)
-    _pdf_stat_box_rounded(fig,0.67,0.69,0.27,0.075,"% Positive Impact",f"{ps['pos_pct']:.1f}%",PDF_ACCENT_AMBER)
-
-    # Separator
+    ax_s1.text(0,0.5,"PASSING STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.06,0.78,0.27,0.07,"Total Passes (AVG)",f"{ps['total_p90']:.1f}",PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.06,0.69,0.27,0.07,"% Accuracy",f"{ps['accuracy_pct']:.1f}%",PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.365,0.78,0.27,0.07,"Advanced Passes (AVG)",f"{ps['advanced_passes_p90']:.1f}",PDF_ACCENT_GREEN)
+    _pdf_stat_box_rounded(fig,0.365,0.69,0.27,0.07,"% Advanced Accuracy",f"{ps['advanced_accuracy_pct']:.1f}%",PDF_ACCENT_GREEN)
+    _pdf_stat_box_rounded(fig,0.67,0.78,0.27,0.07,"Pass Impact Value (AVG)",f"{ps['xt_p90']:.3f}",PDF_ACCENT_AMBER)
+    _pdf_stat_box_rounded(fig,0.67,0.69,0.27,0.07,"% Positive Impact",f"{ps['pos_pct']:.1f}%",PDF_ACCENT_AMBER)
     ax_sep = fig.add_axes([0.06,0.60,0.88,0.004], zorder=0); ax_sep.axis("off")
     ax_sep.plot([0,1],[0.5,0.5],color=PDF_BORDER,linewidth=0.4,transform=ax_sep.transAxes)
-
-    # ── DEFENSIVE STATS ── (white text)
     ax_s2 = fig.add_axes([0.06,0.56,0.35,0.035], zorder=0); ax_s2.axis("off")
-    ax_s2.text(0,0.5,"DEFENSIVE STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_TEXT_WHITE)
-    _pdf_stat_box_rounded(fig,0.06,0.47,0.27,0.075,"Defensive Actions (AVG)",f"{ds['total_actions_p90']:.1f}",PDF_ACCENT_BLUE)
-    _pdf_stat_box_rounded(fig,0.06,0.38,0.27,0.075,"Actions in Opp. Field (AVG)",f"{ds['actions_attacking_p90']:.1f}",PDF_ACCENT_BLUE)
-    _pdf_stat_box_rounded(fig,0.365,0.47,0.27,0.075,"Defensive Duels (AVG)",f"{ds['duels_p90']:.1f}",PDF_ACCENT_GREEN)
-    _pdf_stat_box_rounded(fig,0.365,0.38,0.27,0.075,"% Duels Won",f"{ds['duels_won_pct']:.1f}%",PDF_ACCENT_GREEN)
-    _pdf_stat_box_rounded(fig,0.67,0.47,0.27,0.075,"Interceptions (AVG)",f"{ds['interceptions_p90']:.1f}",PDF_ACCENT_AMBER)
-    _pdf_stat_box_rounded(fig,0.67,0.38,0.27,0.075,"Interceptions in Opp. Field (AVG)",f"{ds['interceptions_attacking_p90']:.1f}",PDF_ACCENT_AMBER)
-
-    # Footer note
+    ax_s2.text(0,0.5,"DEFENSIVE STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.06,0.47,0.27,0.07,"Defensive Actions (AVG)",f"{ds['total_actions_p90']:.1f}",PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.06,0.38,0.27,0.07,"Actions in Opp. Field (AVG)",f"{ds['actions_attacking_p90']:.1f}",PDF_ACCENT_BLUE)
+    _pdf_stat_box_rounded(fig,0.365,0.47,0.27,0.07,"Defensive Duels (AVG)",f"{ds['duels_p90']:.1f}",PDF_ACCENT_GREEN)
+    _pdf_stat_box_rounded(fig,0.365,0.38,0.27,0.07,"% Duels Won",f"{ds['duels_won_pct']:.1f}%",PDF_ACCENT_GREEN)
+    _pdf_stat_box_rounded(fig,0.67,0.47,0.27,0.07,"Interceptions (AVG)",f"{ds['interceptions_p90']:.1f}",PDF_ACCENT_AMBER)
+    _pdf_stat_box_rounded(fig,0.67,0.38,0.27,0.07,"Interceptions in Opp. Field (AVG)",f"{ds['interceptions_attacking_p90']:.1f}",PDF_ACCENT_AMBER)
     ax_note = fig.add_axes([0.06,0.03,0.88,0.03], zorder=0); ax_note.axis("off")
     ax_note.text(0,0.5,"All stats normalized per 90 minutes played",ha="left",va="center",fontsize=7,color=PDF_TEXT_DIM,transform=ax_note.transAxes)
     _pdf_add_footer(fig,page_num,total_pages)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_passes_maps_page(pdf, page_num=3, total_pages=4):
-    """Pass maps page."""
     fig = plt.figure(figsize=(PDF_PAGE_W, 10), facecolor=PDF_BG)
     fig.suptitle("Passes Analysis — All Matches", fontsize=18, fontweight=700,
                  color=PDF_TEXT_WHITE, y=0.95, x=0.06, ha="left")
@@ -1107,7 +1049,6 @@ def _make_passes_maps_page(pdf, page_num=3, total_pages=4):
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_defensive_maps_page(pdf, page_num=4, total_pages=4):
-    """Defensive maps page."""
     fig = plt.figure(figsize=(PDF_PAGE_W, 10), facecolor=PDF_BG)
     fig.suptitle("Defensive Actions — All Matches", fontsize=18, fontweight=700,
                  color=PDF_TEXT_WHITE, y=0.95, x=0.06, ha="left")
@@ -1125,7 +1066,6 @@ def _make_defensive_maps_page(pdf, page_num=4, total_pages=4):
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_match_mini_report(pdf, m_name, page_num, total_pages):
-    """Per-match mini report."""
     df_m = dfs_by_match[m_name]; s_m = compute_stats(df_m, m_name)
     fig = plt.figure(figsize=(PDF_PAGE_W, 9.5), facecolor=PDF_BG)
     fig.suptitle(f"Match Report: {m_name}", fontsize=16, fontweight=700,
