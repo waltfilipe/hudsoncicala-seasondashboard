@@ -28,24 +28,12 @@ except Exception:
     DOCX_AVAILABLE = False
 
 # STYLE
-st.markdown(
-    """
-    <style>
-        .stApp { background-color: #0d0d1f; color: #ffffff; }
-        .stSelectbox label, .stRadio label { color: #d0d0e8 !important; }
-        .stButton button { background-color: #2F80ED; color: white; border: none; border-radius: 8px; padding: 0.5rem 1.5rem; font-weight: 600; }
-        .stButton button:hover { background-color: #1a56db; }
-        h1, h2, h3 { color: #ffffff !important; }
-        .stTabs [data-baseweb="tab-list"] { gap: 2px; }
-        .stTabs [data-baseweb="tab"] { background-color: #1a1a2e; color: #d0d0e8; border-radius: 4px 4px 0 0; padding: 8px 16px; }
-        .stTabs [aria-selected="true"] { background-color: #2F80ED; color: white; }
-        .element-container { margin-bottom: 0.5rem; }
-        .stRadio { background-color: #1a1a2e; border-radius: 8px; padding: 0.5rem 1rem; }
-        .st-emotion-cache-1kyxreq { gap: 0.5rem; }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<style>
+    .stApp { background-color: #0d0d1f; color: #ffffff; }
+    .card { background-color: #1a1a3a; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+</style>
+""", unsafe_allow_html=True)
 
 # CONSTANTS
 FIELD_X, FIELD_Y = 120.0, 80.0
@@ -57,12 +45,10 @@ GOAL_X = 120.0
 GOAL_Y = 40.0
 FIG_W, FIG_H = 7.0, 4.7
 FIG_DPI = 180
-
 COLOR_SUCCESS = "#c8c8c8"
 COLOR_PROGRESSIVE = "#2F80ED"
 COLOR_FAIL = "#E07070"
 ALPHA_SUCCESS = 0.07
-
 C_BLUE = "#2F80ED"
 C_BLUE_DARK = "#1a56db"
 C_GREEN = "#10b981"
@@ -71,10 +57,8 @@ C_PURPLE_LIGHT = "#a78bfa"
 C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
-
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
-
 NX_XT, NY_XT = 16, 12
 D_REF, D_SCALE, BONUS_CAP = 10.0, 20.0, 0.60
 LATERAL_MIN_DIST = 12.0
@@ -90,10 +74,10 @@ PDF_TEXT_LIGHT = "#d0d0e8"
 PDF_TEXT_DIM = "#5a5a7a"
 
 def _hex_to_rgba(hex_color, alpha=1.0):
-    if hex_color.startswith("#"):
-        h = hex_color.lstrip("#")
+    if hex_color.startswith('#'):
+        h = hex_color.lstrip('#')
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return f"rgba({r},{g},{b},{alpha})"
+        return f'rgba({r},{g},{b},{alpha})'
     return hex_color
 
 def get_lane(y):
@@ -118,7 +102,7 @@ def is_progressive_pass(x_start, y_start, x_end, y_end):
 def classify_pass_direction(x_start, y_start, x_end, y_end):
     dx = x_end - x_start
     dy = y_end - y_start
-    dist = np.sqrt(dx**2 + dy**2)
+    dist = np.sqrt(dx ** 2 + dy ** 2)
     angle_deg = np.degrees(np.arctan2(abs(dy), dx))
     if angle_deg <= 45.0:
         return "forward"
@@ -150,9 +134,8 @@ def compute_xt_grid(NX=16, NY=12, sub=24):
     XTc = np.zeros((NY, NX))
     for iy in range(NY):
         for ix in range(NX):
-            XTc[iy, ix] = XT[
-                iy * sub : (iy + 1) * sub, ix * sub : (ix + 1) * sub
-            ].mean()
+            XTc[iy, ix] = XT[iy * sub:(iy + 1) * sub,
+                             ix * sub:(ix + 1) * sub].mean()
     XTc = (XTc - XTc.min()) / (XTc.max() - XTc.min() + 1e-12)
     return XTc
 
@@ -166,7 +149,633 @@ def xt_value(x, y):
 def is_in_funnel_zone(x, y):
     return x <= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN <= y <= PENALTY_AREA_Y_MAX
 
-# BASE PASSES
+def apply_date_mapping(name: str) -> str:
+    mapping = {
+        "Connecticut United": "Connecticut United (03-27)",
+        "Nashville SC": "Nashville SC (03-28)",
+        "Seongnam FC": "Seongnam FC (03-29)",
+        "NY Red Bulls": "NY Red Bulls (03-31)",
+        "Real Salt Lake": "Real Salt Lake (04-26)",
+        "Real Futbol": "Real Futbol (05-23)",
+        "San Jose": "San Jose (05-24)",
+        "Houston Dynamo": "Houston Dynamo (05-26)",
+    }
+    for k, v in mapping.items():
+        if k.lower() == name.lower().strip():
+            return v
+    return name
+
+def get_match_minutes(match_name: str) -> float:
+    if match_name == "All Matches":
+        total = 0.0
+        for k in dfs_by_match:
+            total += get_match_minutes(k)
+        return total
+    name_lower = match_name.lower()
+    if "connecticut" in name_lower:
+        return 60.0
+    if "nashville" in name_lower:
+        return 60.0
+    if "seongnam" in name_lower:
+        return 32.0
+    if "red bulls" in name_lower:
+        return 60.0
+    if "houston" in name_lower:
+        return 63.0
+    if "vardar" in name_lower:
+        return 65.0
+    return 90.0
+
+def read_docx_text(docx_path: Path) -> str:
+    if not DOCX_AVAILABLE:
+        raise RuntimeError("python-docx is not installed.")
+    doc = Document(str(docx_path))
+    return "\n".join(p.text for p in doc.paragraphs if p.text and p.text.strip())
+
+def parse_docx_events(raw_text: str) -> dict:
+    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+    matches = {}
+    current_match = None
+    current_state = None
+    re_match = re.compile(r"^Vs\s+(.+)$", re.IGNORECASE)
+    re_success = re.compile(r"^Sucesso$", re.IGNORECASE)
+    re_fail = re.compile(r"^Errado[s]?$", re.IGNORECASE)
+    re_arrow = re.compile(
+        r"^Seta\s+\d+:\s(([-+]?\d\.?\d+),\s*([-+]?\d\.?\d+))\s->\s(([-+]?\d\.?\d+),\s*([-+]?\d\.?\d+))$",
+        re.IGNORECASE,
+    )
+    for ln in lines:
+        m_match = re_match.match(ln)
+        if m_match:
+            current_match = m_match.group(1).strip()
+            matches.setdefault(current_match, [])
+            current_state = None
+            continue
+        if re_success.match(ln):
+            current_state = "PASS WON"
+            continue
+        if re_fail.match(ln):
+            current_state = "PASS LOST"
+            continue
+        m_arrow = re_arrow.match(ln)
+        if m_arrow and current_match and current_state:
+            x1, y1, x2, y2 = map(float, m_arrow.groups())
+            matches[current_match].append((current_state, x1, y1, x2, y2, None))
+    return {k: v for k, v in matches.items() if len(v) > 0}
+
+def load_docx_matches(docx_filename="Passes - Hudson Cicala.docx") -> dict:
+    p = Path(docx_filename)
+    if not p.exists():
+        return {}
+    txt = read_docx_text(p)
+    return parse_docx_events(txt)
+
+def _safe_pct_diff(a: float, b: float) -> float:
+    base = max(abs(b), 1.0)
+    pct = (abs(a - b) / base) * 100.0
+    return min(pct, 999.0)
+
+def _arrow_html(val_game: float, val_avg: float) -> str:
+    if np.isclose(val_game, val_avg, atol=1e-9):
+        return ""
+    if abs(val_game) < 1 and abs(val_avg) < 1:
+        return ""
+    if val_game > val_avg:
+        pct = _safe_pct_diff(val_game, val_avg)
+        return f'<span style="color:#10b981">▲ +{pct:.0f}%</span>'
+    else:
+        pct = _safe_pct_diff(val_avg, val_game)
+        return f'<span style="color:#ef4444">▼ -{pct:.0f}%</span>'
+
+def _base_pitch(bg="#1a1a2e"):
+    pitch = Pitch(pitch_type="statsbomb", pitch_color=bg,
+                  line_color="#ffffff", line_alpha=0.95)
+    fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
+    fig.set_facecolor(bg)
+    fig.set_dpi(FIG_DPI)
+    ax.axvline(x=FINAL_THIRD_LINE_X, color="#ffffff",
+               lw=1.2, alpha=0.40, linestyle="--")
+    ax.axvline(x=HALF_LINE_X, color="#ffffff",
+               lw=0.7, alpha=0.12, linestyle="--")
+    return fig, ax, pitch
+
+def _attack_arrow(fig, has_cbar=False):
+    ox = -0.04 if has_cbar else 0.0
+    fig.patches.append(FancyArrowPatch(
+        (0.44 + ox, 0.045), (0.56 + ox, 0.045),
+        transform=fig.transFigure, arrowstyle="-|>",
+        mutation_scale=11, linewidth=1.6, color="#aaaaaa"))
+    fig.text(0.50 + ox, 0.012, "Attacking Direction",
+             ha="center", va="bottom", transform=fig.transFigure,
+             fontsize=7.5, color="#aaaaaa")
+
+def _save_fig(fig):
+    fig.canvas.draw()
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=FIG_DPI,
+                facecolor=fig.get_facecolor(), bbox_inches="tight")
+    buf.seek(0)
+    return Image.open(buf)
+
+def _draw_comet_arrow(ax, x0, y0, x1, y1, color):
+    segs = 12
+    ts = np.linspace(0.0, 1.0, segs + 1)
+    for i in range(segs):
+        t0, t1 = ts[i], ts[i + 1]
+        xa = x0 + (x1 - x0) * t0
+        ya = y0 + (y1 - y0) * t0
+        xb = x0 + (x1 - x0) * t1
+        yb = y0 + (y1 - y0) * t1
+        alpha = 0.85 * (0.15 + 0.85 * t1)
+        lw = 2.5 * (0.80 + 0.20 * t1)
+        ax.plot([xa, xb], [ya, yb], color=color, linewidth=lw,
+                alpha=alpha, zorder=4, solid_capstyle="round")
+    ax.scatter(x0, y0, s=20, marker="o", facecolors="none",
+               edgecolors=color, linewidths=1.5, zorder=5, alpha=0.85)
+    ax.scatter(x1, y1, s=32, marker="o", facecolors=color,
+               edgecolors="white", linewidths=0.9, zorder=6, alpha=0.85)
+
+def section_card(title, border_color, items):
+    bg = _hex_to_rgba(border_color, 0.55)
+    bd = _hex_to_rgba(border_color, 0.30)
+    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:14px 16px;margin-bottom:14px">'
+    html += f'<div style="font-size:13px;font-weight:700;color:{border_color};margin-bottom:10px;letter-spacing:0.3px"> {title} </div>'
+    for idx, item in enumerate(items):
+        label = item[0]
+        value = item[1]
+        sub = item[2] if len(item) > 2 else ""
+        tooltip = item[3] if len(item) > 3 else ""
+        is_last = idx == len(items) - 1
+        sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
+        html += f'<div {sep}>'
+        if tooltip:
+            label_html = f'{label} <span title="{tooltip}" style="cursor:help;opacity:0.6">?</span>'
+            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#a0a0c0">{label_html}</span><span style="font-size:16px;font-weight:700;color:#ffffff">{value}</span></div>'
+        else:
+            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#a0a0c0">{label}</span><span style="font-size:16px;font-weight:700;color:#ffffff">{value}</span></div>'
+        if sub:
+            html += f'<div style="font-size:11px;color:#7a7a9a;margin-top:2px">{sub}</div>'
+        html += '</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def cmp_section_card(title, border_color, items):
+    bg = _hex_to_rgba(border_color, 0.55)
+    bd = _hex_to_rgba(border_color, 0.30)
+    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:14px 16px;margin-bottom:14px">'
+    html += f'<div style="font-size:13px;font-weight:700;color:{border_color};margin-bottom:10px;letter-spacing:0.3px"> {title} </div>'
+    for idx, item in enumerate(items):
+        label = item[0]
+        val_game = item[1]
+        val_avg = item[2]
+        disp_game = item[3] if len(item) > 3 else str(val_game)
+        disp_avg = item[4] if len(item) > 4 else str(val_avg)
+        tooltip = item[5] if len(item) > 5 else ""
+        sub = item[6] if len(item) > 6 else ""
+        is_last = idx == len(items) - 1
+        sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
+        html += f'<div {sep}>'
+        if tooltip:
+            label_html = f'{label} <span title="{tooltip}" style="cursor:help;opacity:0.6">?</span>'
+            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#a0a0c0">{label_html}</span><span style="font-size:16px;font-weight:700;color:#ffffff">{disp_game} {_arrow_html(float(val_game), float(val_avg))}</span></div>'
+        else:
+            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#a0a0c0">{label}</span><span style="font-size:16px;font-weight:700;color:#ffffff">{disp_game} {_arrow_html(float(val_game), float(val_avg))}</span></div>'
+        html += f'<div style="font-size:11px;color:#7a7a9a;margin-top:2px">AVG: {disp_avg}</div>'
+        if sub:
+            html += f'<div style="font-size:11px;color:#7a7a9a;margin-top:2px">{sub}</div>'
+        html += '</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def _pdf_add_footer(fig, page_num, total_pages):
+    ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999)
+    ax.axis("off")
+    ax.text(0, 0.5, "Hudson Cicala — 2026 Season", ha="left", va="center",
+            fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax.text(1, 0.5, f"{page_num}/{total_pages}", ha="right", va="center",
+            fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax.plot([0, 1], [1, 1], color="#3a3a5c", linewidth=0.4,
+            transform=ax.transAxes)
+
+def export_dashboard_pdf(passes_images, def_images):
+    total_pages = 2
+    buf = BytesIO()
+    with PdfPages(buf) as pdf:
+        # PAGE 1: PASSES
+        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
+        fig.suptitle("Passes Analysis", fontsize=20, fontweight=700,
+                     color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
+        labels_p = ["Pass Map", "Zone Heatmap (Destination)", "Top 10 Pass Impact"]
+        for i, img in enumerate(passes_images):
+            left = 0.03 + i * 0.33
+            width = 0.31
+            ax_img = fig.add_axes([left, 0.12, width, 0.78])
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            ax_img.text(0.5, 1.01, labels_p[i], ha="center", va="bottom",
+                        fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT,
+                        transform=ax_img.transAxes)
+        _pdf_add_footer(fig, 1, total_pages)
+        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
+        plt.close(fig)
+
+        # PAGE 2: DEFENSIVE
+        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
+        fig.suptitle("Defensive Actions", fontsize=20, fontweight=700,
+                     color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
+        labels_d = ["Defensive Actions Map", "Defensive Heatmap", "Funnel Protection Actions"]
+        for i, img in enumerate(def_images):
+            left = 0.03 + i * 0.33
+            width = 0.31
+            ax_img = fig.add_axes([left, 0.12, width, 0.78])
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            ax_img.text(0.5, 1.01, labels_d[i], ha="center", va="bottom",
+                        fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT,
+                        transform=ax_img.transAxes)
+        _pdf_add_footer(fig, 2, total_pages)
+        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
+        plt.close(fig)
+    buf.seek(0)
+    return buf
+
+COLOR_DUEL_WON = "#10b981"
+COLOR_DUEL_LOST = "#E07070"
+COLOR_INTERCEPTION = "#2F80ED"
+
+def draw_pass_map(df):
+    fig, ax, pitch = _base_pitch()
+    for _, row in df.iterrows():
+        is_lost = not row["is_won"]
+        is_prog = bool(row["progressive"])
+        if is_lost:
+            color, alpha = COLOR_FAIL, 0.72
+        elif is_prog:
+            color, alpha = COLOR_PROGRESSIVE, 0.88
+        else:
+            color, alpha = COLOR_SUCCESS, ALPHA_SUCCESS
+        pitch.arrows(row["x_start"], row["y_start"],
+                     row["x_end"], row["y_end"],
+                     color=color, width=1.3, headwidth=2.0,
+                     headlength=2.0, ax=ax, zorder=3, alpha=alpha)
+        pitch.scatter(row["x_start"], row["y_start"], s=32, marker="o",
+                      color=color, edgecolors="white", linewidths=0.6,
+                      ax=ax, zorder=6, alpha=alpha)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], color=COLOR_SUCCESS, lw=2.0,
+                   label="Completed", alpha=0.65),
+            Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.0,
+                   label="Progressive", alpha=0.90),
+            Line2D([0], [0], color=COLOR_FAIL, lw=2.0,
+                   label="Incomplete", alpha=0.90),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4)
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def draw_corridor_heatmap(df):
+    df_s = df[df["is_won"]].copy()
+    x_bins = np.linspace(0.0, FIELD_X, 7)
+    corridors = {
+        "left": (LANE_LEFT_MIN, FIELD_Y),
+        "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
+        "right": (0.0, LANE_RIGHT_MAX),
+    }
+    counts = {}
+    for cname, (y0, y1) in corridors.items():
+        arr = np.zeros(6, dtype=int)
+        for i in range(6):
+            x0, x1_ = x_bins[i], x_bins[i + 1]
+            arr[i] = int(((df_s["x_end"] >= x0) & (df_s["x_end"] < x1_) &
+                          (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
+        counts[cname] = arr
+    all_vals = np.concatenate([counts[c] for c in counts])
+    vmax = max(1, int(all_vals.max()))
+    cmap = LinearSegmentedColormap.from_list(
+        "wr", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
+    norm = Normalize(vmin=0, vmax=vmax)
+    threshold = max(1, vmax * 0.35)
+    fig, ax, pitch = _base_pitch()
+    for cname, (y0, y1) in corridors.items():
+        for i in range(6):
+            x0_, x1_ = x_bins[i], x_bins[i + 1]
+            value = counts[cname][i]
+            ax.add_patch(Rectangle((x0_, y0), x1_ - x0_, y1 - y0,
+                                   facecolor=cmap(norm(value)),
+                                   edgecolor=(1, 1, 1, 0.12),
+                                   lw=0.5, alpha=0.95, zorder=2))
+            ax.text((x0_ + x1_) / 2, (y0 + y1) / 2, str(value),
+                    ha="center", va="center",
+                    color="#000000" if value <= threshold else "#ffffff",
+                    fontsize=9,
+                    fontweight="700" if value >= vmax * 0.5 else "600",
+                    zorder=4)
+    ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5,
+               alpha=0.15, linestyle="--", zorder=3)
+    ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5,
+               alpha=0.15, linestyle="--", zorder=3)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def draw_top_xt_map(df, top_n=5):
+    fig, ax, pitch = _base_pitch()
+    top_passes = (
+        df[(df["is_won"]) & (df["delta_xt_adj"] > 0)]
+        .sort_values("delta_xt_adj", ascending=False)
+        .head(top_n)
+        .copy()
+        .reset_index(drop=True)
+    )
+    if not top_passes.empty:
+        for _, row in top_passes.iterrows():
+            val = float(row["delta_xt_adj"])
+            color = CMAP_TOP10(NORM_TOP10(np.clip(val, 0.05, 0.40)))
+            _draw_comet_arrow(ax, float(row["x_start"]), float(row["y_start"]),
+                              float(row["x_end"]), float(row["y_end"]), color)
+    sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10, norm=NORM_TOP10)
+    cbar = fig.colorbar(sm, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
+    cbar.set_label("Pass Impact", color="#ffffff", fontsize=8)
+    cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
+    plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
+    _attack_arrow(fig, has_cbar=True)
+    return _save_fig(fig), fig
+
+def draw_defensive_map(df):
+    fig, ax, pitch = _base_pitch()
+    for _, row in df.iterrows():
+        if row["is_duel_won"]:
+            color, marker, s, alpha = COLOR_DUEL_WON, "o", 90, 0.85
+        elif row["is_duel_lost"]:
+            color, marker, s, alpha = COLOR_DUEL_LOST, "X", 100, 0.85
+        else:
+            color, marker, s, alpha = COLOR_INTERCEPTION, "^", 80, 0.85
+        pitch.scatter(row["x"], row["y"], s=s, marker=marker, color=color,
+                      edgecolors="white", linewidths=0.8, ax=ax,
+                      zorder=6, alpha=alpha)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], marker="o", color="w",
+                   markerfacecolor=COLOR_DUEL_WON, markersize=7,
+                   label="Duel Won", alpha=0.90),
+            Line2D([0], [0], marker="X", color="w",
+                   markerfacecolor=COLOR_DUEL_LOST, markersize=8,
+                   label="Duel Lost", alpha=0.90),
+            Line2D([0], [0], marker="^", color="w",
+                   markerfacecolor=COLOR_INTERCEPTION, markersize=7,
+                   label="Interception", alpha=0.90),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4)
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def draw_funnel_protection_map(df):
+    fig, ax, pitch = _base_pitch()
+    funnel_rect = Rectangle(
+        (0, PENALTY_AREA_Y_MIN), FUNNEL_X_EXTEND,
+        PENALTY_AREA_Y_MAX - PENALTY_AREA_Y_MIN,
+        facecolor="#ffd700", edgecolor="#ffd700",
+        lw=1.5, linestyle="--", alpha=0.12, zorder=2)
+    ax.add_patch(funnel_rect)
+    for _, row in df.iterrows():
+        x, y = float(row["x"]), float(row["y"])
+        in_funnel = bool(row.get("in_funnel", is_in_funnel_zone(x, y)))
+        if in_funnel:
+            marker, s, color, edge = "", 120, "#ffd700", "#b8860b"
+        else:
+            marker, s, color, edge = "o", 60, "#888888", "#555555"
+        pitch.scatter(x, y, s=s, marker=marker, color=color,
+                      edgecolors=edge, linewidths=0.5, ax=ax,
+                      zorder=6, alpha=0.85)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], marker="", color="w",
+                   markerfacecolor="#ffd700", markersize=9,
+                   label="Funnel Action", alpha=0.95),
+            Line2D([0], [0], marker="o", color="w",
+                   markerfacecolor="#888888", markersize=6,
+                   label="Other Action", alpha=0.50),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4)
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def draw_defensive_heatmap(df):
+    corridors = {
+        "Right": (LANE_LEFT_MIN, FIELD_Y),
+        "Center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
+        "Left": (0.0, LANE_RIGHT_MAX),
+    }
+    corridor_data = {}
+    for cname, (y0, y1) in corridors.items():
+        mask = (df["y"] >= y0) & (df["y"] < y1)
+        sub = df[mask]
+        cor_val = len(sub)
+        d_won = int(sub["is_duel_won"].sum()) if len(sub) > 0 else 0
+        d_lost = int(sub["is_duel_lost"].sum()) if len(sub) > 0 else 0
+        duel_pct = (d_won / (d_won + d_lost) * 100) if (d_won + d_lost) > 0 else None
+        corridor_data[cname] = {
+            "value": cor_val, "duels_won": d_won, "duels_lost": d_lost,
+            "duel_pct": duel_pct
+        }
+    all_vals = [corridor_data[c]["value"] for c in corridor_data]
+    vmax = max(1, max(all_vals))
+    cmap = LinearSegmentedColormap.from_list(
+        "def", ["#0a0a2a", "#1a1a5a", "#2a3a8a", "#3a5aba", "#4a7aea", "#5a9aff"])
+    norm = Normalize(vmin=0, vmax=vmax)
+    threshold = max(1, vmax * 0.35)
+    fig, ax, pitch = _base_pitch()
+    for cname, (y0, y1) in corridors.items():
+        c = corridor_data[cname]
+        value = c["value"]
+        ax.add_patch(Rectangle((0, y0), FIELD_X, y1 - y0,
+                               facecolor=cmap(norm(value)),
+                               edgecolor=(1, 1, 1, 0.12),
+                               lw=0.5, alpha=0.50, zorder=2))
+        duel_pct = c["duel_pct"]
+        duel_str = f" ({duel_pct:.0f}%)" if duel_pct is not None else ""
+        label = (
+            f"{cname}\nTotal: {value}\nWon: {c['duels_won']}/{c['duels_won'] + c['duels_lost']}"
+            f"{duel_str}")
+        ax.text(FIELD_X / 2, (y0 + y1) / 2, label,
+                ha="center", va="center",
+                color="#000000" if value <= threshold else "#ffffff",
+                fontsize=9, fontweight="600", zorder=4)
+    ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5,
+               alpha=0.20, linestyle="--", zorder=3)
+    ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5,
+               alpha=0.20, linestyle="--", zorder=3)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
+    total = len(df)
+    mins = get_match_minutes(match_name)
+    p90_factor = 90.0 / mins if mins > 0 else 1.0
+    if total == 0:
+        return {
+            "total_passes": 0, "successful_passes": 0, "unsuccessful_passes": 0,
+            "accuracy_pct": 0.0, "progressive_attempted": 0, "progressive_successful": 0,
+            "progressive_accuracy_pct": 0.0, "to_final_third_total": 0,
+            "to_final_third_success": 0, "to_final_third_accuracy_pct": 0.0,
+            "fwd": 0, "fwd_pct": 0.0, "bwd": 0, "bwd_pct": 0.0,
+            "lat": 0, "lat_pct": 0.0, "pos_count": 0, "pos_pct": 0.0,
+            "high_xt_pct": 0.0, "sum_dxt": 0.0, "total_p90": 0.0,
+            "prog_p90": 0.0, "f3_p90": 0.0, "xt_p90": 0.0,
+            "neg_xt_p90": 0.0, "minutes": mins, "long_acc_pct": 0.0,
+            "high_xt_p90": 0.0, "dz_p90": 0.0, "advanced_passes_p90": 0.0,
+            "advanced_accuracy_pct": 0.0,
+        }
+    successful = int(df["is_won"].sum())
+    unsuccessful = total - successful
+    accuracy = successful / total * 100.0
+    progressive_total = int(df["progressive"].sum())
+    progressive_unsuccessful = int(
+        (df["is_won"] & df.apply(
+            lambda r: is_progressive_pass(
+                r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+            axis=1
+        )).sum())
+    progressive_attempted = progressive_total + progressive_unsuccessful
+    progressive_accuracy = (progressive_total / progressive_attempted * 100.0) \
+        if progressive_attempted else 0.0
+    to_final_third = ((df["x_start"] < FINAL_THIRD_LINE_X) &
+                      (df["x_end"] >= FINAL_THIRD_LINE_X))
+    to_final_third_total = int(to_final_third.sum())
+    to_final_third_success = int((to_final_third & df["is_won"]).sum())
+    to_final_third_accuracy = (to_final_third_success / to_final_third_total * 100.0) \
+        if to_final_third_total else 0.0
+    long_passes = df[df["pass_distance"] > 25.0]
+    long_total = len(long_passes)
+    long_success = int(long_passes["is_won"].sum())
+    long_acc_pct = (long_success / long_total * 100.0) if long_total > 0 else 0.0
+    dz_mask = df["is_won"] & (
+        (df["x_end"] >= 100.0) |
+        ((df["x_end"] >= 80.0) & (df["x_end"] < 100.0) &
+         (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] < LANE_LEFT_MIN))
+    )
+    dz_passes = int(dz_mask.sum())
+    fwd = int(df["is_forward"].sum())
+    bwd = int(df["is_backward"].sum())
+    lat = int(df["is_lateral"].sum())
+    pos_count = int((df["is_won"] & (df["delta_xt_adj"] > 0)).sum())
+    pos_pct = (pos_count / total * 100.0) if total > 0 else 0.0
+    high_xt = int((df["delta_xt_adj"] > 0.1).sum())
+    sum_dxt = float(df.loc[df["is_won"], "delta_xt_adj"].sum())
+    neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] < 0), "delta_xt_adj"].sum())
+    advanced_successful = progressive_total + to_final_third_success
+    advanced_attempted = progressive_attempted + to_final_third_total
+    advanced_accuracy_pct = (advanced_successful / advanced_attempted * 100.0) \
+        if advanced_attempted else 0.0
+    advanced_passes_p90 = round((progressive_total + to_final_third_success) * p90_factor, 2)
+    return {
+        "total_passes": total,
+        "successful_passes": successful,
+        "unsuccessful_passes": unsuccessful,
+        "accuracy_pct": round(accuracy, 2),
+        "progressive_attempted": progressive_attempted,
+        "progressive_successful": progressive_total,
+        "progressive_accuracy_pct": round(progressive_accuracy, 2),
+        "to_final_third_total": to_final_third_total,
+        "to_final_third_success": to_final_third_success,
+        "to_final_third_accuracy_pct": round(to_final_third_accuracy, 2),
+        "fwd": fwd,
+        "fwd_pct": round(fwd / total * 100.0, 1),
+        "bwd": bwd,
+        "bwd_pct": round(bwd / total * 100.0, 1),
+        "lat": lat,
+        "lat_pct": round(lat / total * 100.0, 1),
+        "pos_count": pos_count,
+        "pos_pct": round(pos_pct, 1),
+        "high_xt_pct": round(high_xt / total * 100.0, 1),
+        "sum_dxt": round(sum_dxt, 3),
+        "total_p90": round(total * p90_factor, 1),
+        "prog_p90": round(progressive_total * p90_factor, 2),
+        "f3_p90": round(to_final_third_success * p90_factor, 2),
+        "xt_p90": round(sum_dxt * p90_factor, 3),
+        "neg_xt_p90": round(neg_xt * p90_factor, 3),
+        "minutes": mins,
+        "long_acc_pct": round(long_acc_pct, 1),
+        "high_xt_p90": round(high_xt * p90_factor, 2),
+        "dz_p90": round(dz_passes * p90_factor, 2),
+        "advanced_passes_p90": round(advanced_passes_p90, 1),
+        "advanced_accuracy_pct": round(advanced_accuracy_pct, 2),
+    }
+
+def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
+    total_actions = len(df)
+    if match_name == "All Matches":
+        mins = sum(get_match_minutes(k) for k in defensive_dfs_by_match)
+    else:
+        mins = get_match_minutes(match_name)
+    p90_factor = 90.0 / mins if mins > 0 else 1.0
+    duels_won = int(df["is_duel_won"].sum())
+    duels_lost = int(df["is_duel_lost"].sum())
+    total_duels = duels_won + duels_lost
+    duels_won_pct = (duels_won / total_duels * 100.0) if total_duels > 0 else 0.0
+    interceptions = int(df["is_interception"].sum())
+    attacking_half = df[df["is_attacking_half"]]
+    actions_attacking = len(attacking_half)
+    interceptions_attacking = int(attacking_half["is_interception"].sum())
+    own_half = df[~df["is_attacking_half"]]
+    actions_own = len(own_half)
+    funnel_total = int(df["in_funnel"].sum())
+    funnel_df = df[df["in_funnel"]]
+    funnel_successful = int(
+        funnel_df["is_duel_won"].sum() + funnel_df["is_interception"].sum())
+    funnel_success_pct = (funnel_successful / funnel_total * 100.0) \
+        if funnel_total > 0 else 0.0
+    return {
+        "total_actions": total_actions,
+        "total_actions_p90": round(total_actions * p90_factor, 1),
+        "actions_own": actions_own,
+        "actions_own_p90": round(actions_own * p90_factor, 1),
+        "actions_attacking": actions_attacking,
+        "actions_attacking_p90": round(actions_attacking * p90_factor, 1),
+        "total_duels": total_duels,
+        "duels_p90": round(total_duels * p90_factor, 1),
+        "duels_won_pct": round(duels_won_pct, 1),
+        "duels_won": duels_won,
+        "interceptions": interceptions,
+        "interceptions_p90": round(interceptions * p90_factor, 1),
+        "interceptions_attacking": interceptions_attacking,
+        "interceptions_attacking_p90": round(interceptions_attacking * p90_factor, 1),
+        "funnel_actions": funnel_total,
+        "funnel_actions_p90": round(funnel_total * p90_factor, 1),
+        "funnel_success_pct": round(funnel_success_pct, 1),
+    }
+
+# ──────────────────────────────────────────────
+# DATA LOADING (must come after all helper defs)
+# ──────────────────────────────────────────────
+
+docx_matches_data = {}
+try:
+    docx_matches_data = load_docx_matches()
+except Exception:
+    pass
+
+combined_matches_data = {}
+for k, v in docx_matches_data.items():
+    mapped_k = apply_date_mapping(k)
+    name = mapped_k if mapped_k not in combined_matches_data else f"DOCX - {mapped_k}"
+    combined_matches_data[name] = v
+
 BASE_MATCHES_DATA = {
     "Connecticut United (03-27)": [
         ("PASS WON", 26.75, 68.34, 8.97, 51.05, None),
@@ -296,322 +905,6 @@ BASE_MATCHES_DATA = {
     ],
 }
 
-# DEFENSIVE ACTIONS
-DEFENSIVE_MATCHES_DATA = {
-    "Michigan Wolves (02-20)": [
-        ("DUEL_WON", 53.85, 25.21),
-        ("DUEL_WON", 23.59, 29.69),
-        ("DUEL_WON", 43.88, 50.31),
-        ("DUEL_WON", 16.28, 50.47),
-        ("DUEL_WON", 15.62, 72.08),
-        ("DUEL_LOST", 73.63, 27.70),
-        ("DUEL_LOST", 17.78, 75.41),
-        ("INTERCEPTION", 65.82, 19.05),
-        ("INTERCEPTION", 72.80, 57.62),
-    ],
-    "Philadelphia Union (02-27)": [
-        ("DUEL_WON", 67.98, 34.68),
-        ("DUEL_WON", 41.05, 23.54),
-        ("DUEL_WON", 21.27, 31.36),
-        ("DUEL_WON", 39.55, 60.95),
-        ("DUEL_LOST", 29.08, 40.50),
-        ("INTERCEPTION", 53.52, 19.05),
-        ("INTERCEPTION", 28.08, 27.03),
-        ("INTERCEPTION", 29.75, 53.63),
-        ("INTERCEPTION", 30.58, 69.42),
-        ("INTERCEPTION", 52.19, 58.12),
-        ("INTERCEPTION", 59.17, 63.11),
-        ("INTERCEPTION", 80.78, 68.92),
-    ],
-    "Columbus Crew (03-06)": [
-        ("DUEL_WON", 22.76, 29.69),
-        ("DUEL_WON", 48.36, 20.72),
-        ("DUEL_LOST", 63.32, 56.96),
-        ("DUEL_LOST", 25.42, 53.63),
-        ("DUEL_LOST", 27.42, 34.35),
-        ("DUEL_LOST", 35.06, 36.84),
-        ("INTERCEPTION", 29.75, 35.84),
-        ("INTERCEPTION", 29.41, 40.00),
-        ("INTERCEPTION", 37.39, 60.95),
-    ],
-    "Minnesota United (03-13)": [
-        ("DUEL_WON", 44.04, 58.95),
-        ("DUEL_WON", 14.78, 18.56),
-        ("DUEL_WON", 17.61, 12.24),
-        ("DUEL_LOST", 77.29, 27.20),
-        ("DUEL_LOST", 39.89, 3.43),
-        ("DUEL_LOST", 33.24, 10.91),
-        ("DUEL_LOST", 35.90, 57.12),
-        ("DUEL_LOST", 0.99, 69.26),
-        ("INTERCEPTION", 31.74, 38.50),
-        ("INTERCEPTION", 35.06, 36.34),
-        ("INTERCEPTION", 38.39, 41.00),
-        ("INTERCEPTION", 46.54, 26.37),
-        ("INTERCEPTION", 40.38, 19.22),
-    ],
-    "Vardar Soccer (03-14)": [
-        ("INTERCEPTION", 72.63, 35.18),
-        ("INTERCEPTION", 12.29, 44.99),
-    ],
-    "Colorado Rapids (03-20)": [
-        ("DUEL_WON", 36.39, 73.75),
-        ("DUEL_WON", 39.39, 68.76),
-        ("DUEL_WON", 52.02, 66.10),
-        ("DUEL_WON", 21.60, 53.63),
-        ("DUEL_WON", 35.06, 43.32),
-        ("DUEL_WON", 36.39, 31.36),
-        ("DUEL_WON", 45.54, 25.04),
-        ("DUEL_WON", 34.40, 21.71),
-        ("DUEL_WON", 53.68, 17.23),
-        ("DUEL_WON", 57.67, 22.55),
-        ("DUEL_LOST", 78.95, 4.59),
-        ("DUEL_LOST", 75.46, 65.43),
-        ("DUEL_LOST", 33.07, 54.46),
-        ("INTERCEPTION", 67.31, 9.58),
-        ("INTERCEPTION", 39.89, 24.54),
-        ("INTERCEPTION", 43.38, 28.86),
-        ("INTERCEPTION", 27.92, 35.01),
-        ("INTERCEPTION", 64.49, 53.80),
-        ("INTERCEPTION", 36.56, 55.96),
-        ("INTERCEPTION", 30.58, 62.11),
-    ],
-    "Connecticut United (03-27)": [
-        ("DUEL_WON", 82.94, 3.43),
-        ("DUEL_WON", 70.47, 21.05),
-        ("DUEL_WON", 67.31, 27.53),
-        ("DUEL_WON", 27.58, 32.52),
-        ("DUEL_LOST", 65.49, 22.71),
-        ("DUEL_LOST", 3.48, 72.42),
-        ("INTERCEPTION", 82.28, 31.02),
-        ("INTERCEPTION", 66.15, 26.04),
-        ("INTERCEPTION", 83.94, 56.29),
-        ("INTERCEPTION", 59.00, 61.44),
-    ],
-    "Nashville SC (03-28)": [
-        ("DUEL_WON", 84.77, 54.79),
-        ("DUEL_WON", 62.33, 55.46),
-        ("DUEL_WON", 35.90, 62.61),
-        ("DUEL_WON", 40.38, 70.09),
-        ("DUEL_WON", 40.38, 40.33),
-        ("DUEL_WON", 26.92, 23.71),
-        ("DUEL_LOST", 92.91, 24.54),
-        ("DUEL_LOST", 90.59, 53.63),
-        ("DUEL_LOST", 64.82, 59.78),
-        ("DUEL_LOST", 51.02, 71.58),
-        ("INTERCEPTION", 85.60, 23.38),
-        ("INTERCEPTION", 65.65, 57.12),
-        ("INTERCEPTION", 77.45, 61.78),
-    ],
-    "Seongnam FC (03-29)": [
-        ("DUEL_LOST", 73.80, 21.71),
-        ("INTERCEPTION", 38.06, 30.36),
-    ],
-    "NY Red Bulls (03-31)": [
-        ("DUEL_WON", 33.87, 59.39),
-        ("DUEL_WON", 37.58, 67.14),
-        ("DUEL_LOST", 66.32, 60.28),
-        ("INTERCEPTION", 34.90, 34.02),
-        ("INTERCEPTION", 56.34, 42.66),
-        ("INTERCEPTION", 68.15, 54.30),
-    ],
-    "Minnesota United (04-10)": [
-        ("DUEL_WON", 15.62, 54.30),
-        ("DUEL_LOST", 36.39, 39.34),
-        ("DUEL_LOST", 10.79, 64.27),
-        ("INTERCEPTION", 66.15, 68.59),
-        ("INTERCEPTION", 25.42, 54.79),
-        ("INTERCEPTION", 35.06, 48.15),
-        ("INTERCEPTION", 22.76, 21.88),
-        ("INTERCEPTION", 56.84, 25.87),
-        ("INTERCEPTION", 82.11, 20.72),
-    ],
-    "Sporting Kansas City (04-17)": [
-        ("DUEL_WON", 85.43, 17.06),
-        ("DUEL_WON", 76.12, 20.72),
-        ("DUEL_WON", 54.68, 12.07),
-        ("DUEL_WON", 53.18, 24.87),
-        ("DUEL_WON", 24.92, 34.35),
-        ("DUEL_WON", 31.24, 49.64),
-        ("DUEL_WON", 39.05, 52.14),
-        ("DUEL_WON", 43.71, 62.61),
-        ("DUEL_WON", 49.69, 73.25),
-        ("DUEL_WON", 75.79, 62.77),
-        ("DUEL_LOST", 30.24, 69.09),
-        ("INTERCEPTION", 60.83, 15.40),
-        ("INTERCEPTION", 10.79, 25.87),
-        ("INTERCEPTION", 52.35, 52.97),
-        ("INTERCEPTION", 70.14, 61.28),
-        ("INTERCEPTION", 54.85, 62.11),
-        ("INTERCEPTION", 39.89, 66.60),
-    ],
-    "Cedar Stars (04-22)": [
-        ("DUEL_WON", 9.30, 22.88),
-        ("DUEL_WON", 59.00, 15.06),
-        ("DUEL_WON", 60.83, 44.65),
-        ("INTERCEPTION", 75.46, 28.20),
-        ("INTERCEPTION", 79.95, 57.29),
-        ("INTERCEPTION", 27.09, 66.43),
-    ],
-    "South Florida (04-23)": [
-        ("DUEL_WON", 36.23, 32.85),
-        ("DUEL_WON", 42.05, 54.79),
-        ("DUEL_WON", 35.56, 57.62),
-        ("DUEL_WON", 70.97, 18.72),
-        ("INTERCEPTION", 55.18, 63.77),
-        ("INTERCEPTION", 22.26, 62.94),
-    ],
-    "Real Salt Lake (04-26)": [
-        ("DUEL_WON", 47.70, 56.96),
-        ("DUEL_WON", 26.75, 55.29),
-        ("DUEL_WON", 21.93, 26.37),
-        ("DUEL_WON", 68.15, 2.93),
-        ("DUEL_LOST", 76.29, 32.02),
-        ("INTERCEPTION", 15.78, 53.30),
-        ("INTERCEPTION", 35.23, 24.54),
-        ("INTERCEPTION", 76.79, 21.55),
-    ],
-    "Real Futbol (05-23)": [
-        ("DUEL_WON", 72.63, 10.24),
-        ("DUEL_WON", 73.80, 13.90),
-        ("DUEL_WON", 54.68, 40.50),
-        ("DUEL_LOST", 69.97, 22.55),
-        ("DUEL_LOST", 30.24, 5.26),
-        ("DUEL_LOST", 39.22, 71.75),
-        ("INTERCEPTION", 75.46, 56.12),
-    ],
-    "San Jose (05-24)": [
-        ("DUEL_WON", 8.97, 23.21),
-        ("DUEL_WON", 23.76, 23.71),
-        ("DUEL_WON", 24.09, 41.50),
-        ("DUEL_WON", 30.91, 61.61),
-        ("DUEL_WON", 65.15, 39.17),
-        ("DUEL_WON", 69.31, 29.36),
-        ("DUEL_LOST", 27.42, 52.97),
-        ("DUEL_LOST", 30.74, 49.48),
-        ("DUEL_LOST", 34.73, 52.80),
-        ("DUEL_LOST", 43.38, 59.62),
-        ("DUEL_LOST", 34.90, 63.77),
-        ("DUEL_LOST", 31.08, 62.61),
-        ("DUEL_LOST", 21.27, 66.93),
-        ("DUEL_LOST", 70.47, 57.79),
-        ("INTERCEPTION", 76.62, 21.38),
-        ("INTERCEPTION", 80.78, 60.61),
-        ("INTERCEPTION", 21.93, 57.45),
-        ("INTERCEPTION", 25.59, 70.59),
-        ("INTERCEPTION", 34.90, 31.52),
-        ("INTERCEPTION", 38.39, 33.68),
-        ("INTERCEPTION", 29.91, 23.38),
-    ],
-    "Houston Dynamo (05-26)": [
-        ("DUEL_WON", 68.31, 37.84),
-        ("DUEL_WON", 68.15, 42.33),
-        ("DUEL_WON", 83.27, 73.75),
-        ("DUEL_WON", 55.51, 62.77),
-        ("DUEL_WON", 49.53, 75.91),
-        ("DUEL_WON", 31.24, 70.92),
-        ("DUEL_WON", 24.59, 55.29),
-        ("DUEL_LOST", 21.60, 21.88),
-        ("DUEL_LOST", 26.59, 60.45),
-    ],
-}
-
-# HELPERS
-def apply_date_mapping(name: str) -> str:
-    mapping = {
-        "Connecticut United": "Connecticut United (03-27)",
-        "Nashville SC": "Nashville SC (03-28)",
-        "Seongnam FC": "Seongnam FC (03-29)",
-        "NY Red Bulls": "NY Red Bulls (03-31)",
-        "Real Salt Lake": "Real Salt Lake (04-26)",
-        "Real Futbol": "Real Futbol (05-23)",
-        "San Jose": "San Jose (05-24)",
-        "Houston Dynamo": "Houston Dynamo (05-26)",
-    }
-    for k, v in mapping.items():
-        if k.lower() == name.lower().strip():
-            return v
-    return name
-
-def get_match_minutes(match_name: str) -> float:
-    if match_name == "All Matches":
-        total = 0.0
-        for k in dfs_by_match:
-            total += get_match_minutes(k)
-        return total
-    name_lower = match_name.lower()
-    if "connecticut" in name_lower:
-        return 60.0
-    if "nashville" in name_lower:
-        return 60.0
-    if "seongnam" in name_lower:
-        return 32.0
-    if "red bulls" in name_lower:
-        return 60.0
-    if "houston" in name_lower:
-        return 63.0
-    if "vardar" in name_lower:
-        return 65.0
-    return 90.0
-
-def read_docx_text(docx_path: Path) -> str:
-    if not DOCX_AVAILABLE:
-        raise RuntimeError("python-docx is not installed.")
-    doc = Document(str(docx_path))
-    return "\n".join(p.text for p in doc.paragraphs if p.text and p.text.strip())
-
-def parse_docx_events(raw_text: str) -> dict:
-    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
-    matches = {}
-    current_match = None
-    current_state = None
-
-    re_match = re.compile(r"^Vs\s+(.+)$", re.IGNORECASE)
-    re_success = re.compile(r"^Sucesso$", re.IGNORECASE)
-    re_fail = re.compile(r"^Errado[s]?$", re.IGNORECASE)
-    re_arrow = re.compile(
-        r"^Seta\s+\d+:\s(([-+]?\d\.?\d+),\s*([-+]?\d\.?\d+))\s->\s(([-+]?\d\.?\d+),\s*([-+]?\d\.?\d+))$",
-        re.IGNORECASE,
-    )
-
-    for ln in lines:
-        m_match = re_match.match(ln)
-        if m_match:
-            current_match = m_match.group(1).strip()
-            matches.setdefault(current_match, [])
-            current_state = None
-            continue
-        if re_success.match(ln):
-            current_state = "PASS WON"
-            continue
-        if re_fail.match(ln):
-            current_state = "PASS LOST"
-            continue
-        m_arrow = re_arrow.match(ln)
-        if m_arrow and current_match and current_state:
-            x1, y1, x2, y2 = map(float, m_arrow.groups())
-            matches[current_match].append((current_state, x1, y1, x2, y2, None))
-
-    return {k: v for k, v in matches.items() if len(v) > 0}
-
-def load_docx_matches(docx_filename="Passes - Hudson Cicala.docx") -> dict:
-    p = Path(docx_filename)
-    if not p.exists():
-        return {}
-    txt = read_docx_text(p)
-    return parse_docx_events(txt)
-
-# DATA LOADING
-docx_matches_data = {}
-try:
-    docx_matches_data = load_docx_matches()
-except Exception:
-    pass
-
-combined_matches_data = {}
-for k, v in docx_matches_data.items():
-    mapped_k = apply_date_mapping(k)
-    name = mapped_k if mapped_k not in combined_matches_data else f"DOCX - {mapped_k}"
-    combined_matches_data[name] = v
 for k, v in BASE_MATCHES_DATA.items():
     combined_matches_data[k] = v
 
@@ -622,32 +915,40 @@ if len(combined_matches_data) == 0:
 # BUILD DATAFRAMES & REORDER MATCHES
 dfs_by_match = {}
 for match_name, events in combined_matches_data.items():
-    dfm = pd.DataFrame(events, columns=["type", "x_start", "y_start", "x_end", "y_end", "video"])
+    dfm = pd.DataFrame(
+        events, columns=["type", "x_start", "y_start", "x_end", "y_end", "video"])
     dfm["match"] = match_name
     dfm["number"] = np.arange(1, len(dfm) + 1)
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["progressive"] = dfm.apply(
-        lambda r: r["is_won"]
-        and is_progressive_pass(r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+        lambda r: (
+            r["is_won"] and
+            is_progressive_pass(r["x_start"], r["y_start"],
+                                r["x_end"], r["y_end"])
+        ),
         axis=1,
     )
     dfm["direction"] = dfm.apply(
-        lambda r: classify_pass_direction(r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+        lambda r: classify_pass_direction(
+            r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
         axis=1,
     )
     dfm["is_forward"] = dfm["direction"] == "forward"
     dfm["is_backward"] = dfm["direction"] == "backward"
     dfm["is_lateral"] = dfm["direction"].isin(["lateral_left", "lateral_right"])
     dfm["pass_distance"] = np.sqrt(
-        (dfm["x_end"] - dfm["x_start"]) ** 2 + (dfm["y_end"] - dfm["y_start"]) ** 2
-    )
-    dfm["xt_start"] = dfm.apply(lambda r: xt_value(r["x_start"], r["y_start"]), axis=1)
-    dfm["xt_end"] = dfm.apply(lambda r: xt_value(r["x_end"], r["y_end"]), axis=1)
-    dfm["delta_xt"] = np.where(dfm["is_won"], dfm["xt_end"] - dfm["xt_start"], 0.0)
+        (dfm["x_end"] - dfm["x_start"]) ** 2 +
+        (dfm["y_end"] - dfm["y_start"]) ** 2)
+    dfm["xt_start"] = dfm.apply(
+        lambda r: xt_value(r["x_start"], r["y_start"]), axis=1)
+    dfm["xt_end"] = dfm.apply(
+        lambda r: xt_value(r["x_end"], r["y_end"]), axis=1)
+    dfm["delta_xt"] = np.where(dfm["is_won"],
+                                dfm["xt_end"] - dfm["xt_start"], 0.0)
     dfm["dist_bonus"] = distance_bonus(dfm["pass_distance"].values)
     dfm["delta_xt_adj"] = np.where(
-        dfm["is_won"], dfm["delta_xt"] * (1.0 + dfm["dist_bonus"]), 0.0
-    )
+        dfm["is_won"],
+        dfm["delta_xt"] * (1.0 + dfm["dist_bonus"]), 0.0)
     dfs_by_match[match_name] = dfm
 
 # REORDER LOGIC
@@ -662,6 +963,139 @@ if len(items) >= 18:
 df_all = pd.concat(dfs_by_match.values(), ignore_index=True)
 
 # DEFENSIVE DATA LOADING
+DEFENSIVE_MATCHES_DATA = {
+    "Michigan Wolves (02-20)": [
+        ("DUEL_WON", 53.85, 25.21), ("DUEL_WON", 23.59, 29.69),
+        ("DUEL_WON", 43.88, 50.31), ("DUEL_WON", 16.28, 50.47),
+        ("DUEL_WON", 15.62, 72.08), ("DUEL_LOST", 73.63, 27.70),
+        ("DUEL_LOST", 17.78, 75.41), ("INTERCEPTION", 65.82, 19.05),
+        ("INTERCEPTION", 72.80, 57.62),
+    ],
+    "Philadelphia Union (02-27)": [
+        ("DUEL_WON", 67.98, 34.68), ("DUEL_WON", 41.05, 23.54),
+        ("DUEL_WON", 21.27, 31.36), ("DUEL_WON", 39.55, 60.95),
+        ("DUEL_LOST", 29.08, 40.50), ("INTERCEPTION", 53.52, 19.05),
+        ("INTERCEPTION", 28.08, 27.03), ("INTERCEPTION", 29.75, 53.63),
+        ("INTERCEPTION", 30.58, 69.42), ("INTERCEPTION", 52.19, 58.12),
+        ("INTERCEPTION", 59.17, 63.11), ("INTERCEPTION", 80.78, 68.92),
+    ],
+    "Columbus Crew (03-06)": [
+        ("DUEL_WON", 22.76, 29.69), ("DUEL_WON", 48.36, 20.72),
+        ("DUEL_LOST", 63.32, 56.96), ("DUEL_LOST", 25.42, 53.63),
+        ("DUEL_LOST", 27.42, 34.35), ("DUEL_LOST", 35.06, 36.84),
+        ("INTERCEPTION", 29.75, 35.84), ("INTERCEPTION", 29.41, 40.00),
+        ("INTERCEPTION", 37.39, 60.95),
+    ],
+    "Minnesota United (03-13)": [
+        ("DUEL_WON", 44.04, 58.95), ("DUEL_WON", 14.78, 18.56),
+        ("DUEL_WON", 17.61, 12.24), ("DUEL_LOST", 77.29, 27.20),
+        ("DUEL_LOST", 39.89, 3.43), ("DUEL_LOST", 33.24, 10.91),
+        ("DUEL_LOST", 35.90, 57.12), ("DUEL_LOST", 0.99, 69.26),
+        ("INTERCEPTION", 31.74, 38.50), ("INTERCEPTION", 35.06, 36.34),
+        ("INTERCEPTION", 38.39, 41.00), ("INTERCEPTION", 46.54, 26.37),
+        ("INTERCEPTION", 40.38, 19.22),
+    ],
+    "Vardar Soccer (03-14)": [
+        ("INTERCEPTION", 72.63, 35.18), ("INTERCEPTION", 12.29, 44.99),
+    ],
+    "Colorado Rapids (03-20)": [
+        ("DUEL_WON", 36.39, 73.75), ("DUEL_WON", 39.39, 68.76),
+        ("DUEL_WON", 52.02, 66.10), ("DUEL_WON", 21.60, 53.63),
+        ("DUEL_WON", 35.06, 43.32), ("DUEL_WON", 36.39, 31.36),
+        ("DUEL_WON", 45.54, 25.04), ("DUEL_WON", 34.40, 21.71),
+        ("DUEL_WON", 53.68, 17.23), ("DUEL_WON", 57.67, 22.55),
+        ("DUEL_LOST", 78.95, 4.59), ("DUEL_LOST", 75.46, 65.43),
+        ("DUEL_LOST", 33.07, 54.46), ("INTERCEPTION", 67.31, 9.58),
+        ("INTERCEPTION", 39.89, 24.54), ("INTERCEPTION", 43.38, 28.86),
+        ("INTERCEPTION", 27.92, 35.01), ("INTERCEPTION", 64.49, 53.80),
+        ("INTERCEPTION", 36.56, 55.96), ("INTERCEPTION", 30.58, 62.11),
+    ],
+    "Connecticut United (03-27)": [
+        ("DUEL_WON", 82.94, 3.43), ("DUEL_WON", 70.47, 21.05),
+        ("DUEL_WON", 67.31, 27.53), ("DUEL_WON", 27.58, 32.52),
+        ("DUEL_LOST", 65.49, 22.71), ("DUEL_LOST", 3.48, 72.42),
+        ("INTERCEPTION", 82.28, 31.02), ("INTERCEPTION", 66.15, 26.04),
+        ("INTERCEPTION", 83.94, 56.29), ("INTERCEPTION", 59.00, 61.44),
+    ],
+    "Nashville SC (03-28)": [
+        ("DUEL_WON", 84.77, 54.79), ("DUEL_WON", 62.33, 55.46),
+        ("DUEL_WON", 35.90, 62.61), ("DUEL_WON", 40.38, 70.09),
+        ("DUEL_WON", 40.38, 40.33), ("DUEL_WON", 26.92, 23.71),
+        ("DUEL_LOST", 92.91, 24.54), ("DUEL_LOST", 90.59, 53.63),
+        ("DUEL_LOST", 64.82, 59.78), ("DUEL_LOST", 51.02, 71.58),
+        ("INTERCEPTION", 85.60, 23.38), ("INTERCEPTION", 65.65, 57.12),
+        ("INTERCEPTION", 77.45, 61.78),
+    ],
+    "Seongnam FC (03-29)": [
+        ("DUEL_LOST", 73.80, 21.71), ("INTERCEPTION", 38.06, 30.36),
+    ],
+    "NY Red Bulls (03-31)": [
+        ("DUEL_WON", 33.87, 59.39), ("DUEL_WON", 37.58, 67.14),
+        ("DUEL_LOST", 66.32, 60.28), ("INTERCEPTION", 34.90, 34.02),
+        ("INTERCEPTION", 56.34, 42.66), ("INTERCEPTION", 68.15, 54.30),
+    ],
+    "Minnesota United (04-10)": [
+        ("DUEL_WON", 15.62, 54.30), ("DUEL_LOST", 36.39, 39.34),
+        ("DUEL_LOST", 10.79, 64.27), ("INTERCEPTION", 66.15, 68.59),
+        ("INTERCEPTION", 25.42, 54.79), ("INTERCEPTION", 35.06, 48.15),
+        ("INTERCEPTION", 22.76, 21.88), ("INTERCEPTION", 56.84, 25.87),
+        ("INTERCEPTION", 82.11, 20.72),
+    ],
+    "Sporting Kansas City (04-17)": [
+        ("DUEL_WON", 85.43, 17.06), ("DUEL_WON", 76.12, 20.72),
+        ("DUEL_WON", 54.68, 12.07), ("DUEL_WON", 53.18, 24.87),
+        ("DUEL_WON", 24.92, 34.35), ("DUEL_WON", 31.24, 49.64),
+        ("DUEL_WON", 39.05, 52.14), ("DUEL_WON", 43.71, 62.61),
+        ("DUEL_WON", 49.69, 73.25), ("DUEL_WON", 75.79, 62.77),
+        ("DUEL_LOST", 30.24, 69.09), ("INTERCEPTION", 60.83, 15.40),
+        ("INTERCEPTION", 10.79, 25.87), ("INTERCEPTION", 52.35, 52.97),
+        ("INTERCEPTION", 70.14, 61.28), ("INTERCEPTION", 54.85, 62.11),
+        ("INTERCEPTION", 39.89, 66.60),
+    ],
+    "Cedar Stars (04-22)": [
+        ("DUEL_WON", 9.30, 22.88), ("DUEL_WON", 59.00, 15.06),
+        ("DUEL_WON", 60.83, 44.65), ("INTERCEPTION", 75.46, 28.20),
+        ("INTERCEPTION", 79.95, 57.29), ("INTERCEPTION", 27.09, 66.43),
+    ],
+    "South Florida (04-23)": [
+        ("DUEL_WON", 36.23, 32.85), ("DUEL_WON", 42.05, 54.79),
+        ("DUEL_WON", 35.56, 57.62), ("DUEL_WON", 70.97, 18.72),
+        ("INTERCEPTION", 55.18, 63.77), ("INTERCEPTION", 22.26, 62.94),
+    ],
+    "Real Salt Lake (04-26)": [
+        ("DUEL_WON", 47.70, 56.96), ("DUEL_WON", 26.75, 55.29),
+        ("DUEL_WON", 21.93, 26.37), ("DUEL_WON", 68.15, 2.93),
+        ("DUEL_LOST", 76.29, 32.02), ("INTERCEPTION", 15.78, 53.30),
+        ("INTERCEPTION", 35.23, 24.54), ("INTERCEPTION", 76.79, 21.55),
+    ],
+    "Real Futbol (05-23)": [
+        ("DUEL_WON", 72.63, 10.24), ("DUEL_WON", 73.80, 13.90),
+        ("DUEL_WON", 54.68, 40.50), ("DUEL_LOST", 69.97, 22.55),
+        ("DUEL_LOST", 30.24, 5.26), ("DUEL_LOST", 39.22, 71.75),
+        ("INTERCEPTION", 75.46, 56.12),
+    ],
+    "San Jose (05-24)": [
+        ("DUEL_WON", 8.97, 23.21), ("DUEL_WON", 23.76, 23.71),
+        ("DUEL_WON", 24.09, 41.50), ("DUEL_WON", 30.91, 61.61),
+        ("DUEL_WON", 65.15, 39.17), ("DUEL_WON", 69.31, 29.36),
+        ("DUEL_LOST", 27.42, 52.97), ("DUEL_LOST", 30.74, 49.48),
+        ("DUEL_LOST", 34.73, 52.80), ("DUEL_LOST", 43.38, 59.62),
+        ("DUEL_LOST", 34.90, 63.77), ("DUEL_LOST", 31.08, 62.61),
+        ("DUEL_LOST", 21.27, 66.93), ("DUEL_LOST", 70.47, 57.79),
+        ("INTERCEPTION", 76.62, 21.38), ("INTERCEPTION", 80.78, 60.61),
+        ("INTERCEPTION", 21.93, 57.45), ("INTERCEPTION", 25.59, 70.59),
+        ("INTERCEPTION", 34.90, 31.52), ("INTERCEPTION", 38.39, 33.68),
+        ("INTERCEPTION", 29.91, 23.38),
+    ],
+    "Houston Dynamo (05-26)": [
+        ("DUEL_WON", 68.31, 37.84), ("DUEL_WON", 68.15, 42.33),
+        ("DUEL_WON", 83.27, 73.75), ("DUEL_WON", 55.51, 62.77),
+        ("DUEL_WON", 49.53, 75.91), ("DUEL_WON", 31.24, 70.92),
+        ("DUEL_WON", 24.59, 55.29), ("DUEL_LOST", 21.60, 21.88),
+        ("DUEL_LOST", 26.59, 60.45),
+    ],
+}
+
 defensive_dfs_by_match = {}
 for match_name, events in DEFENSIVE_MATCHES_DATA.items():
     df_def = pd.DataFrame(events, columns=["type", "x", "y"])
@@ -672,970 +1106,35 @@ for match_name, events in DEFENSIVE_MATCHES_DATA.items():
     df_def["is_duel"] = df_def["is_duel_won"] | df_def["is_duel_lost"]
     df_def["is_interception"] = df_def["type"] == "INTERCEPTION"
     df_def["in_funnel"] = df_def.apply(
-        lambda r: is_in_funnel_zone(r["x"], r["y"]), axis=1
-    )
+        lambda r: is_in_funnel_zone(r["x"], r["y"]), axis=1)
     defensive_dfs_by_match[match_name] = df_def
 
-# STATS
-def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
-    total = len(df)
-    mins = get_match_minutes(match_name)
-    p90_factor = 90.0 / mins if mins > 0 else 1.0
-
-    if total == 0:
-        return {
-            "total_passes": 0,
-            "successful_passes": 0,
-            "unsuccessful_passes": 0,
-            "accuracy_pct": 0.0,
-            "progressive_attempted": 0,
-            "progressive_successful": 0,
-            "progressive_accuracy_pct": 0.0,
-            "to_final_third_total": 0,
-            "to_final_third_success": 0,
-            "to_final_third_accuracy_pct": 0.0,
-            "fwd": 0,
-            "fwd_pct": 0.0,
-            "bwd": 0,
-            "bwd_pct": 0.0,
-            "lat": 0,
-            "lat_pct": 0.0,
-            "pos_count": 0,
-            "pos_pct": 0.0,
-            "high_xt_pct": 0.0,
-            "sum_dxt": 0.0,
-            "total_p90": 0.0,
-            "prog_p90": 0.0,
-            "f3_p90": 0.0,
-            "xt_p90": 0.0,
-            "neg_xt_p90": 0.0,
-            "minutes": mins,
-            "long_acc_pct": 0.0,
-            "high_xt_p90": 0.0,
-            "dz_p90": 0.0,
-            "advanced_passes_p90": 0.0,
-            "advanced_accuracy_pct": 0.0,
-        }
-
-    successful = int(df["is_won"].sum())
-    unsuccessful = total - successful
-    accuracy = successful / total * 100.0
-
-    progressive_total = int(df["progressive"].sum())
-    progressive_unsuccessful = int(
-        (
-            df["is_won"]
-            & df.apply(
-                lambda r: is_progressive_pass(
-                    r["x_start"], r["y_start"], r["x_end"], r["y_end"]
-                ),
-                axis=1,
-            )
-        ).sum()
-    )
-    progressive_attempted = progressive_total + progressive_unsuccessful
-    progressive_accuracy = (
-        (progressive_total / progressive_attempted * 100.0) if progressive_attempted else 0.0
-    )
-
-    to_final_third = (df["x_start"] < FINAL_THIRD_LINE_X) & (
-        df["x_end"] >= FINAL_THIRD_LINE_X
-    )
-    to_final_third_total = int(to_final_third.sum())
-    to_final_third_success = int((to_final_third & df["is_won"]).sum())
-    to_final_third_accuracy = (
-        (to_final_third_success / to_final_third_total * 100.0)
-        if to_final_third_total
-        else 0.0
-    )
-
-    long_passes = df[df["pass_distance"] > 25.0]
-    long_total = len(long_passes)
-    long_success = int(long_passes["is_won"].sum())
-    long_acc_pct = (long_success / long_total * 100.0) if long_total > 0 else 0.0
-
-    dz_mask = df["is_won"] & (
-        (df["x_end"] >= 100.0)
-        | (
-            (df["x_end"] >= 80.0)
-            & (df["x_end"] < 100.0)
-            & (df["y_end"] >= LANE_RIGHT_MAX)
-            & (df["y_end"] < LANE_LEFT_MIN)
-        )
-    )
-    dz_passes = int(dz_mask.sum())
-
-    fwd = int(df["is_forward"].sum())
-    bwd = int(df["is_backward"].sum())
-    lat = int(df["is_lateral"].sum())
-
-    pos_count = int((df["is_won"] & (df["delta_xt_adj"] > 0)).sum())
-    pos_pct = (pos_count / total * 100.0) if total > 0 else 0.0
-
-    high_xt = int((df["delta_xt_adj"] > 0.1).sum())
-    sum_dxt = float(df.loc[df["is_won"], "delta_xt_adj"].sum())
-    neg_xt = float(
-        df.loc[df["is_won"] & (df["delta_xt_adj"] < 0), "delta_xt_adj"].sum()
-    )
-
-    advanced_successful = progressive_total + to_final_third_success
-    advanced_attempted = progressive_attempted + to_final_third_total
-    advanced_accuracy_pct = (
-        (advanced_successful / advanced_attempted * 100.0) if advanced_attempted else 0.0
-    )
-    advanced_passes_p90 = round(
-        (progressive_total + to_final_third_success) * p90_factor, 2
-    )
-
-    return {
-        "total_passes": total,
-        "successful_passes": successful,
-        "unsuccessful_passes": unsuccessful,
-        "accuracy_pct": round(accuracy, 2),
-        "progressive_attempted": progressive_attempted,
-        "progressive_successful": progressive_total,
-        "progressive_accuracy_pct": round(progressive_accuracy, 2),
-        "to_final_third_total": to_final_third_total,
-        "to_final_third_success": to_final_third_success,
-        "to_final_third_accuracy_pct": round(to_final_third_accuracy, 2),
-        "fwd": fwd,
-        "fwd_pct": round(fwd / total * 100.0, 1),
-        "bwd": bwd,
-        "bwd_pct": round(bwd / total * 100.0, 1),
-        "lat": lat,
-        "lat_pct": round(lat / total * 100.0, 1),
-        "pos_count": pos_count,
-        "pos_pct": round(pos_pct, 1),
-        "high_xt_pct": round(high_xt / total * 100.0, 1),
-        "sum_dxt": round(sum_dxt, 3),
-        "total_p90": round(total * p90_factor, 1),
-        "prog_p90": round(progressive_total * p90_factor, 2),
-        "f3_p90": round(to_final_third_success * p90_factor, 2),
-        "xt_p90": round(sum_dxt * p90_factor, 3),
-        "neg_xt_p90": round(neg_xt * p90_factor, 3),
-        "minutes": mins,
-        "long_acc_pct": round(long_acc_pct, 1),
-        "high_xt_p90": round(high_xt * p90_factor, 2),
-        "dz_p90": round(dz_passes * p90_factor, 2),
-        "advanced_passes_p90": round(advanced_passes_p90, 1),
-        "advanced_accuracy_pct": round(advanced_accuracy_pct, 2),
-    }
-
-def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
-    total_actions = len(df)
-
-    if match_name == "All Matches":
-        mins = sum(get_match_minutes(k) for k in defensive_dfs_by_match)
-    else:
-        mins = get_match_minutes(match_name)
-
-    p90_factor = 90.0 / mins if mins > 0 else 1.0
-
-    duels_won = int(df["is_duel_won"].sum())
-    duels_lost = int(df["is_duel_lost"].sum())
-    total_duels = duels_won + duels_lost
-    duels_won_pct = (duels_won / total_duels * 100.0) if total_duels > 0 else 0.0
-
-    interceptions = int(df["is_interception"].sum())
-    attacking_half = df[df["is_attacking_half"]]
-    actions_attacking = len(attacking_half)
-    interceptions_attacking = int(attacking_half["is_interception"].sum())
-
-    # own half
-    own_half = df[~df["is_attacking_half"]]
-    actions_own = len(own_half)
-
-    # funnel
-    funnel_total = int(df["in_funnel"].sum())
-    funnel_df = df[df["in_funnel"]]
-    funnel_successful = int(
-        funnel_df["is_duel_won"].sum() + funnel_df["is_interception"].sum()
-    )
-    funnel_success_pct = (
-        (funnel_successful / funnel_total * 100.0) if funnel_total > 0 else 0.0
-    )
-
-    return {
-        "total_actions": total_actions,
-        "total_actions_p90": round(total_actions * p90_factor, 1),
-        "actions_own": actions_own,
-        "actions_own_p90": round(actions_own * p90_factor, 1),
-        "actions_attacking": actions_attacking,
-        "actions_attacking_p90": round(actions_attacking * p90_factor, 1),
-        "total_duels": total_duels,
-        "duels_p90": round(total_duels * p90_factor, 1),
-        "duels_won_pct": round(duels_won_pct, 1),
-        "duels_won": duels_won,
-        "interceptions": interceptions,
-        "interceptions_p90": round(interceptions * p90_factor, 1),
-        "interceptions_attacking": interceptions_attacking,
-        "interceptions_attacking_p90": round(
-            interceptions_attacking * p90_factor, 1
-        ),
-        "funnel_actions": funnel_total,
-        "funnel_actions_p90": round(funnel_total * p90_factor, 1),
-        "funnel_success_pct": round(funnel_success_pct, 1),
-    }
-
-# UI HELPERS
-def _safe_pct_diff(a: float, b: float) -> float:
-    base = max(abs(b), 1.0)
-    pct = (abs(a - b) / base) * 100.0
-    return min(pct, 999.0)
-
-def _arrow_html(val_game: float, val_avg: float) -> str:
-    if np.isclose(val_game, val_avg, atol=1e-9):
-        return ""
-    if abs(val_game) < 1 and abs(val_avg) < 1:
-        return ""
-    if val_game > val_avg:
-        pct = _safe_pct_diff(val_game, val_avg)
-        return f' <span style="color:#10b981;font-weight:600;"> ▲ +{pct:.0f}%</span>'
-    else:
-        pct = _safe_pct_diff(val_avg, val_game)
-        return f' <span style="color:#E07070;font-weight:600;"> ▼ -{pct:.0f}%</span>'
-
-def section_card(title, border_color, items):
-    bg = _hex_to_rgba(border_color, 0.55)
-    bd = _hex_to_rgba(border_color, 0.30)
-    html = (
-        f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;'
-        f'padding:14px 16px 10px 16px;margin-bottom:10px;">'
-    )
-    html += (
-        f'<div style="font-size:13px;font-weight:700;color:#ffffff;'
-        f'margin-bottom:8px;letter-spacing:0.3px;"> {title} </div>'
-    )
-    html += (
-        f'<div style="display:flex;flex-direction:column;gap:2px;">'
-    )
-    for idx, item in enumerate(items):
-        label = item[0]
-        value = item[1]
-        sub = item[2] if len(item) > 2 else ""
-        tooltip = item[3] if len(item) > 3 else ""
-        is_last = idx == len(items) - 1
-        sep = (
-            ""
-            if is_last
-            else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
-        )
-        html += f'<div {sep}>'
-        if tooltip:
-            label_html = f'{label} <span title="{tooltip}" style="cursor:help;color:#8888aa;font-size:11px;">?</span>'
-        else:
-            label_html = label
-        html += (
-            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-            f'<span style="font-size:12px;color:#d0d0e8;">{label_html}</span>'
-            f'<span style="font-size:16px;font-weight:700;color:#ffffff;">{value}</span>'
-            f'</div>'
-        )
-        if sub:
-            html += (
-                f'<div style="font-size:11px;color:#8888aa;margin-top:2px;">{sub}</div>'
-            )
-        html += "</div>"
-    html += "</div></div>"
-    st.markdown(html, unsafe_allow_html=True)
-
-def cmp_section_card(title, border_color, items):
-    bg = _hex_to_rgba(border_color, 0.55)
-    bd = _hex_to_rgba(border_color, 0.30)
-    html = (
-        f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;'
-        f'padding:14px 16px 10px 16px;margin-bottom:10px;">'
-    )
-    html += (
-        f'<div style="font-size:13px;font-weight:700;color:#ffffff;'
-        f'margin-bottom:8px;letter-spacing:0.3px;"> {title} </div>'
-    )
-    for idx, item in enumerate(items):
-        label = item[0]
-        val_game = item[1]
-        val_avg = item[2]
-        disp_game = item[3] if len(item) > 3 else str(val_game)
-        disp_avg = item[4] if len(item) > 4 else str(val_avg)
-        tooltip = item[5] if len(item) > 5 else ""
-        sub = item[6] if len(item) > 6 else ""
-        is_last = idx == len(items) - 1
-        sep = (
-            ""
-            if is_last
-            else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
-        )
-        html += f'<div {sep}>'
-        if tooltip:
-            label_html = f'{label} <span title="{tooltip}" style="cursor:help;color:#8888aa;font-size:11px;">?</span>'
-        else:
-            label_html = label
-        html += (
-            f'<div>'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-            f'<span style="font-size:12px;color:#d0d0e8;">{label_html}</span>'
-            f'<span style="font-size:16px;font-weight:700;color:#ffffff;">{disp_game}'
-            f'{_arrow_html(float(val_game), float(val_avg))}</span>'
-            f'</div>'
-            f'<div style="font-size:11px;color:#8888aa;margin-top:2px;">AVG: {disp_avg}</div>'
-        )
-        if sub:
-            html += f'<div style="font-size:11px;color:#8888aa;margin-top:2px;">{sub}</div>'
-        html += "</div>"
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
-
-# PDF EXPORT FUNCTION
-def _pdf_add_footer(fig, page_num, total_pages):
-    ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999)
-    ax.axis("off")
-    ax.text(
-        0,
-        0.5,
-        "Hudson Cicala — 2026 Season",
-        ha="left",
-        va="center",
-        fontsize=7,
-        color=PDF_TEXT_DIM,
-        transform=ax.transAxes,
-    )
-    ax.text(
-        1,
-        0.5,
-        f"{page_num}/{total_pages}",
-        ha="right",
-        va="center",
-        fontsize=7,
-        color=PDF_TEXT_DIM,
-        transform=ax.transAxes,
-    )
-    ax.plot(
-        [0, 1],
-        [1, 1],
-        color="#3a3a5c",
-        linewidth=0.4,
-        transform=ax.transAxes,
-    )
-
-def export_dashboard_pdf(passes_images, def_images):
-    """Generate a 2-page PDF with passes and defensive screenshots"""
-    total_pages = 2
-    buf = BytesIO()
-    with PdfPages(buf) as pdf:
-        # ── PAGE 1: PASSES ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle(
-            "Passes Analysis",
-            fontsize=20,
-            fontweight=700,
-            color=PDF_TEXT_WHITE,
-            y=0.97,
-            x=0.06,
-            ha="left",
-        )
-        labels_p = ["Pass Map", "Zone Heatmap (Destination)", "Top 10 Pass Impact"]
-        for i, img in enumerate(passes_images):
-            left = 0.03 + i * 0.33
-            width = 0.31
-            ax_img = fig.add_axes([left, 0.12, width, 0.78])
-            ax_img.imshow(img)
-            ax_img.axis("off")
-            ax_img.text(
-                0.5,
-                1.01,
-                labels_p[i],
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                fontweight=600,
-                color=PDF_TEXT_LIGHT,
-                transform=ax_img.transAxes,
-            )
-        _pdf_add_footer(fig, 1, total_pages)
-        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
-        plt.close(fig)
-
-        # ── PAGE 2: DEFENSIVE ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle(
-            "Defensive Actions",
-            fontsize=20,
-            fontweight=700,
-            color=PDF_TEXT_WHITE,
-            y=0.97,
-            x=0.06,
-            ha="left",
-        )
-        labels_d = [
-            "Defensive Actions Map",
-            "Defensive Heatmap",
-            "Funnel Protection Actions",
-        ]
-        for i, img in enumerate(def_images):
-            left = 0.03 + i * 0.33
-            width = 0.31
-            ax_img = fig.add_axes([left, 0.12, width, 0.78])
-            ax_img.imshow(img)
-            ax_img.axis("off")
-            ax_img.text(
-                0.5,
-                1.01,
-                labels_d[i],
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                fontweight=600,
-                color=PDF_TEXT_LIGHT,
-                transform=ax_img.transAxes,
-            )
-        _pdf_add_footer(fig, 2, total_pages)
-        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
-        plt.close(fig)
-
-    buf.seek(0)
-    return buf
-
-# DRAW HELPERS (PITCH)
-def _base_pitch(bg="#1a1a2e"):
-    pitch = Pitch(
-        pitch_type="statsbomb",
-        pitch_color=bg,
-        line_color="#ffffff",
-        line_alpha=0.95,
-    )
-    fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
-    fig.set_facecolor(bg)
-    fig.set_dpi(FIG_DPI)
-    ax.axvline(
-        x=FINAL_THIRD_LINE_X, color="#ffffff", lw=1.2, alpha=0.40, linestyle="--"
-    )
-    ax.axvline(
-        x=HALF_LINE_X, color="#ffffff", lw=0.7, alpha=0.12, linestyle="--"
-    )
-    return fig, ax, pitch
-
-def _attack_arrow(fig, has_cbar=False):
-    ox = -0.04 if has_cbar else 0.0
-    fig.patches.append(
-        FancyArrowPatch(
-            (0.44 + ox, 0.045),
-            (0.56 + ox, 0.045),
-            transform=fig.transFigure,
-            arrowstyle="-|>",
-            mutation_scale=11,
-            linewidth=1.6,
-            color="#aaaaaa",
-        )
-    )
-    fig.text(
-        0.50 + ox,
-        0.012,
-        "Attacking Direction",
-        ha="center",
-        va="bottom",
-        transform=fig.transFigure,
-        fontsize=7.5,
-        color="#aaaaaa",
-    )
-
-def _save_fig(fig):
-    fig.canvas.draw()
-    buf = BytesIO()
-    fig.savefig(
-        buf,
-        format="png",
-        dpi=FIG_DPI,
-        facecolor=fig.get_facecolor(),
-        bbox_inches="tight",
-    )
-    buf.seek(0)
-    return Image.open(buf)
-
-def draw_pass_map(df):
-    fig, ax, pitch = _base_pitch()
-    for _, row in df.iterrows():
-        is_lost = not row["is_won"]
-        is_prog = bool(row["progressive"])
-        if is_lost:
-            color, alpha = COLOR_FAIL, 0.72
-        elif is_prog:
-            color, alpha = COLOR_PROGRESSIVE, 0.88
-        else:
-            color, alpha = COLOR_SUCCESS, ALPHA_SUCCESS
-        pitch.arrows(
-            row["x_start"],
-            row["y_start"],
-            row["x_end"],
-            row["y_end"],
-            color=color,
-            width=1.3,
-            headwidth=2.0,
-            headlength=2.0,
-            ax=ax,
-            zorder=3,
-            alpha=alpha,
-        )
-        pitch.scatter(
-            row["x_start"],
-            row["y_start"],
-            s=32,
-            marker="o",
-            color=color,
-            edgecolors="white",
-            linewidths=0.6,
-            ax=ax,
-            zorder=6,
-            alpha=alpha,
-        )
-    leg = ax.legend(
-        handles=[
-            Line2D(
-                [0],
-                [0],
-                color=COLOR_SUCCESS,
-                lw=2.0,
-                label="Completed",
-                alpha=0.65,
-            ),
-            Line2D(
-                [0],
-                [0],
-                color=COLOR_PROGRESSIVE,
-                lw=2.0,
-                label="Progressive",
-                alpha=0.90,
-            ),
-            Line2D(
-                [0],
-                [0],
-                color=COLOR_FAIL,
-                lw=2.0,
-                label="Incomplete",
-                alpha=0.90,
-            ),
-        ],
-        loc="upper left",
-        bbox_to_anchor=(0.01, 0.99),
-        frameon=True,
-        facecolor="#1a1a2e",
-        edgecolor="#444466",
-        fontsize=6.5,
-        labelspacing=0.35,
-        borderpad=0.4,
-    )
-    for t in leg.get_texts():
-        t.set_color("white")
-    leg.get_frame().set_alpha(0.90)
-    _attack_arrow(fig)
-    return _save_fig(fig), fig
-
-def draw_corridor_heatmap(df):
-    df_s = df[df["is_won"]].copy()
-    x_bins = np.linspace(0.0, FIELD_X, 7)
-    corridors = {
-        "left": (LANE_LEFT_MIN, FIELD_Y),
-        "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
-        "right": (0.0, LANE_RIGHT_MAX),
-    }
-    counts = {}
-    for cname, (y0, y1) in corridors.items():
-        arr = np.zeros(6, dtype=int)
-        for i in range(6):
-            x0, x1_ = x_bins[i], x_bins[i + 1]
-            arr[i] = int(
-                (
-                    (df_s["x_end"] >= x0)
-                    & (df_s["x_end"] < x1_)
-                    & (df_s["y_end"] >= y0)
-                    & (df_s["y_end"] < y1)
-                ).sum()
-            )
-        counts[cname] = arr
-
-    all_vals = np.concatenate([counts[c] for c in counts])
-    vmax = max(1, int(all_vals.max()))
-    cmap = LinearSegmentedColormap.from_list(
-        "wr",
-        [
-            "#ffffff",
-            "#ffecec",
-            "#ffbfbf",
-            "#ff8080",
-            "#ff3b3b",
-            "#ff0000",
-        ],
-    )
-    norm = Normalize(vmin=0, vmax=vmax)
-    threshold = max(1, vmax * 0.35)
-
-    fig, ax, pitch = _base_pitch()
-    for cname, (y0, y1) in corridors.items():
-        for i in range(6):
-            x0_, x1_ = x_bins[i], x_bins[i + 1]
-            value = counts[cname][i]
-            ax.add_patch(
-                Rectangle(
-                    (x0_, y0),
-                    x1_ - x0_,
-                    y1 - y0,
-                    facecolor=cmap(norm(value)),
-                    edgecolor=(1, 1, 1, 0.12),
-                    lw=0.5,
-                    alpha=0.95,
-                    zorder=2,
-                )
-            )
-            ax.text(
-                (x0_ + x1_) / 2,
-                (y0 + y1) / 2,
-                str(value),
-                ha="center",
-                va="center",
-                color="#000000" if value <= threshold else "#ffffff",
-                fontsize=9,
-                fontweight="700" if value >= vmax * 0.5 else "600",
-                zorder=4,
-            )
-    ax.axhline(
-        y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3
-    )
-    ax.axhline(
-        y=LANE_RIGHT_MAX,
-        color="#ffffff",
-        lw=0.5,
-        alpha=0.15,
-        linestyle="--",
-        zorder=3,
-    )
-    _attack_arrow(fig)
-    return _save_fig(fig), fig
-
-def _draw_comet_arrow(ax, x0, y0, x1, y1, color):
-    segs = 12
-    ts = np.linspace(0.0, 1.0, segs + 1)
-    for i in range(segs):
-        t0, t1 = ts[i], ts[i + 1]
-        xa = x0 + (x1 - x0) * t0
-        ya = y0 + (y1 - y0) * t0
-        xb = x0 + (x1 - x0) * t1
-        yb = y0 + (y1 - y0) * t1
-        alpha = 0.85 * (0.15 + 0.85 * t1)
-        lw = 2.5 * (0.80 + 0.20 * t1)
-        ax.plot(
-            [xa, xb],
-            [ya, yb],
-            color=color,
-            linewidth=lw,
-            alpha=alpha,
-            zorder=4,
-            solid_capstyle="round",
-        )
-    ax.scatter(
-        x0,
-        y0,
-        s=20,
-        marker="o",
-        facecolors="none",
-        edgecolors=color,
-        linewidths=1.5,
-        zorder=5,
-        alpha=0.85,
-    )
-    ax.scatter(
-        x1,
-        y1,
-        s=32,
-        marker="o",
-        facecolors=color,
-        edgecolors="white",
-        linewidths=0.9,
-        zorder=6,
-        alpha=0.85,
-    )
-
-def draw_top_xt_map(df, top_n=5):
-    fig, ax, pitch = _base_pitch()
-    top_passes = (
-        df[(df["is_won"]) & (df["delta_xt_adj"] > 0)]
-        .sort_values("delta_xt_adj", ascending=False)
-        .head(top_n)
-        .copy()
-        .reset_index(drop=True)
-    )
-    if not top_passes.empty:
-        for _, row in top_passes.iterrows():
-            val = float(row["delta_xt_adj"])
-            color = CMAP_TOP10(NORM_TOP10(np.clip(val, 0.05, 0.40)))
-            _draw_comet_arrow(
-                ax,
-                float(row["x_start"]),
-                float(row["y_start"]),
-                float(row["x_end"]),
-                float(row["y_end"]),
-                color,
-            )
-    sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10, norm=NORM_TOP10)
-    cbar = fig.colorbar(sm, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
-    cbar.set_label("Pass Impact", color="#ffffff", fontsize=8)
-    cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
-    plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
-    _attack_arrow(fig, has_cbar=True)
-    return _save_fig(fig), fig
-
-# DEFENSIVE PITCH DRAW HELPERS
-COLOR_DUEL_WON = "#10b981"
-COLOR_DUEL_LOST = "#E07070"
-COLOR_INTERCEPTION = "#2F80ED"
-
-def draw_defensive_map(df):
-    fig, ax, pitch = _base_pitch()
-    for _, row in df.iterrows():
-        if row["is_duel_won"]:
-            color, marker, s, alpha = COLOR_DUEL_WON, "o", 90, 0.85
-        elif row["is_duel_lost"]:
-            color, marker, s, alpha = COLOR_DUEL_LOST, "X", 100, 0.85
-        else:
-            color, marker, s, alpha = COLOR_INTERCEPTION, "^", 80, 0.85
-        pitch.scatter(
-            row["x"],
-            row["y"],
-            s=s,
-            marker=marker,
-            color=color,
-            edgecolors="white",
-            linewidths=0.8,
-            ax=ax,
-            zorder=6,
-            alpha=alpha,
-        )
-    leg = ax.legend(
-        handles=[
-            Line2D(
-                [0],
-                [0],
-                marker="o",
-                color="w",
-                markerfacecolor=COLOR_DUEL_WON,
-                markersize=7,
-                label="Duel Won",
-                alpha=0.90,
-            ),
-            Line2D(
-                [0],
-                [0],
-                marker="X",
-                color="w",
-                markerfacecolor=COLOR_DUEL_LOST,
-                markersize=8,
-                label="Duel Lost",
-                alpha=0.90,
-            ),
-            Line2D(
-                [0],
-                [0],
-                marker="^",
-                color="w",
-                markerfacecolor=COLOR_INTERCEPTION,
-                markersize=7,
-                label="Interception",
-                alpha=0.90,
-            ),
-        ],
-        loc="upper left",
-        bbox_to_anchor=(0.01, 0.99),
-        frameon=True,
-        facecolor="#1a1a2e",
-        edgecolor="#444466",
-        fontsize=6.5,
-        labelspacing=0.35,
-        borderpad=0.4,
-    )
-    for t in leg.get_texts():
-        t.set_color("white")
-    leg.get_frame().set_alpha(0.90)
-    _attack_arrow(fig)
-    return _save_fig(fig), fig
-
-def draw_funnel_protection_map(df):
-    fig, ax, pitch = _base_pitch()
-    funnel_rect = Rectangle(
-        (0, PENALTY_AREA_Y_MIN),
-        FUNNEL_X_EXTEND,
-        PENALTY_AREA_Y_MAX - PENALTY_AREA_Y_MIN,
-        facecolor="#ffd700",
-        edgecolor="#ffd700",
-        lw=1.5,
-        linestyle="--",
-        alpha=0.12,
-        zorder=2,
-    )
-    ax.add_patch(funnel_rect)
-    for _, row in df.iterrows():
-        x, y = float(row["x"]), float(row["y"])
-        in_funnel = bool(row.get("in_funnel", is_in_funnel_zone(x, y)))
-        if in_funnel:
-            marker, s, color, edge = "*", 120, "#ffd700", "#b8860b"
-        else:
-            marker, s, color, edge = "o", 60, "#888888", "#555555"
-        pitch.scatter(
-            x,
-            y,
-            s=s,
-            marker=marker,
-            color=color,
-            edgecolors=edge,
-            linewidths=0.5,
-            ax=ax,
-            zorder=6,
-            alpha=0.85,
-        )
-    leg = ax.legend(
-        handles=[
-            Line2D(
-                [0],
-                [0],
-                marker="*",
-                color="w",
-                markerfacecolor="#ffd700",
-                markersize=9,
-                label="Funnel Action",
-                alpha=0.95,
-            ),
-            Line2D(
-                [0],
-                [0],
-                marker="o",
-                color="w",
-                markerfacecolor="#888888",
-                markersize=6,
-                label="Other Action",
-                alpha=0.50,
-            ),
-        ],
-        loc="upper left",
-        bbox_to_anchor=(0.01, 0.99),
-        frameon=True,
-        facecolor="#1a1a2e",
-        edgecolor="#444466",
-        fontsize=6.5,
-        labelspacing=0.35,
-        borderpad=0.4,
-    )
-    for t in leg.get_texts():
-        t.set_color("white")
-    leg.get_frame().set_alpha(0.90)
-    _attack_arrow(fig)
-    return _save_fig(fig), fig
-
-def draw_defensive_heatmap(df):
-    corridors = {
-        "Right": (LANE_LEFT_MIN, FIELD_Y),
-        "Center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
-        "Left": (0.0, LANE_RIGHT_MAX),
-    }
-    corridor_data = {}
-    for cname, (y0, y1) in corridors.items():
-        mask = (df["y"] >= y0) & (df["y"] < y1)
-        sub = df[mask]
-        value = len(sub)
-        duels_won = int(sub["is_duel_won"].sum())
-        duels_lost = int(sub["is_duel_lost"].sum())
-        total_duels = duels_won + duels_lost
-        duel_pct = (duels_won / total_duels * 100) if total_duels > 0 else None
-        corridor_data[cname] = {
-            "value": value,
-            "duels_won": duels_won,
-            "duels_lost": duels_lost,
-            "duel_pct": duel_pct,
-        }
-
-    all_vals = [corridor_data[c]["value"] for c in corridors]
-    vmax = max(1, max(all_vals))
-    cmap = LinearSegmentedColormap.from_list(
-        "bg",
-        ["#0a0a2e", "#142850", "#1a4a7a", "#2a6aa0", "#3a8ac0", "#5aace0"],
-    )
-    norm = Normalize(vmin=0, vmax=vmax)
-    threshold = max(1, vmax * 0.40)
-
-    fig, ax, pitch = _base_pitch()
-    for cname, (y0, y1) in corridors.items():
-        c = corridor_data[cname]
-        value = c["value"]
-        ax.add_patch(
-            Rectangle(
-                (0, y0),
-                FIELD_X,
-                y1 - y0,
-                facecolor=cmap(norm(value)),
-                edgecolor=(1, 1, 1, 0.08),
-                lw=0.5,
-                alpha=0.85,
-                zorder=2,
-            )
-        )
-        duel_pct = c["duel_pct"]
-        label = (
-            f"{cname}\nTotal: {value}\nWon: {c['duels_won']}/{c['duels_won']+c['duels_lost']} ({duel_pct:.0f}%)"
-            if duel_pct is not None
-            else f"{cname}\nTotal: {value}"
-        )
-        ax.text(
-            FIELD_X / 2,
-            (y0 + y1) / 2,
-            label,
-            ha="center",
-            va="center",
-            color="#000000" if value <= threshold else "#ffffff",
-            fontsize=9,
-            fontweight="600",
-            zorder=4,
-        )
-    ax.axhline(
-        y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.20, linestyle="--", zorder=3
-    )
-    ax.axhline(
-        y=LANE_RIGHT_MAX,
-        color="#ffffff",
-        lw=0.5,
-        alpha=0.20,
-        linestyle="--",
-        zorder=3,
-    )
-    _attack_arrow(fig)
-    return _save_fig(fig), fig
-
+# ──────────────────────────────────────────────
 # SIDEBAR
-st.sidebar.markdown(
-    """
-    <div style="padding: 0.5rem 0;">
-        <h2 style="color:#ffffff; font-size: 1.3rem; margin-bottom:0.2rem;">
-            ⚽ Pass Stats Dashboard
-        </h2>
-        <p style="color:#5a5a7a; font-size: 0.85rem; margin-top:0;">
-            2026 Season · Hudson Cicala
-        </p>
-    </div>
-""",
-    unsafe_allow_html=True,
-)
+# ──────────────────────────────────────────────
+st.sidebar.markdown("""
+<div style="text-align:center;margin-bottom:10px">
+    <h2 style="color:#ffffff;margin:0;font-size:20px">Pass Stats Dashboard</h2>
+    <p style="color:#7a7a9a;font-size:12px;margin:2px 0 0 0">2026 Season · Hudson Cicala</p>
+</div>
+""", unsafe_allow_html=True)
 
 img_path = "Captura de tela 2026-06-02 154425.png"
 if os.path.exists(img_path):
     st.sidebar.image(img_path, use_container_width=True)
 
-st.sidebar.markdown(
-    """
-    <div style="color:#5a5a7a; font-size: 0.75rem; border-top: 1px solid #2a2a4a; padding-top: 0.5rem;">
-        Data collected from match footage
-    </div>
-""",
-    unsafe_allow_html=True,
-)
+st.sidebar.markdown("""
+<div style="text-align:center;margin-top:10px">
+    <p style="color:#5a5a7a;font-size:11px">Data collected from match footage</p>
+</div>
+""", unsafe_allow_html=True)
 
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
 
+# ──────────────────────────────────────────────
 # LAYOUT — SINGLE TAB
+# ──────────────────────────────────────────────
 tab_dash, = st.tabs(["Detailed Dashboard"])
 
 with tab_dash:
@@ -1648,17 +1147,14 @@ with tab_dash:
         with col_f1:
             pass_match_options = ["All Matches"] + list(dfs_by_match.keys())
             selected_match = st.selectbox(
-                "Select Match", options=pass_match_options, index=0, key="pass_match"
-            )
+                "Select Match", options=pass_match_options,
+                index=0, key="pass_match")
 
         with col_f2:
             pass_filter = st.radio(
                 "Pass Type",
                 ["All", "Successful", "Unsuccessful", "Progressive", "Final Third"],
-                index=0,
-                horizontal=True,
-                key="pass_filter",
-            )
+                index=0, horizontal=True, key="pass_filter")
 
         if selected_match == "All Matches":
             df_game_filtered = pd.concat(dfs_by_match.values(), ignore_index=True)
@@ -1676,14 +1172,13 @@ with tab_dash:
                 return df[df["progressive"]].copy()
             if pass_filter == "Final Third":
                 return df[
-                    (df["x_start"] < FINAL_THIRD_LINE_X)
-                    & (df["x_end"] >= FINAL_THIRD_LINE_X)
+                    (df["x_start"] < FINAL_THIRD_LINE_X) &
+                    (df["x_end"] >= FINAL_THIRD_LINE_X)
                 ].copy()
             return df.copy()
 
         df_game = apply_filter(df_game_filtered)
         s_game = compute_stats(df_game, match_name_for_stats)
-
         s_avg = {}
         if num_matches > 0:
             for k in all_match_stats[0].keys():
@@ -1704,185 +1199,130 @@ with tab_dash:
         plt.close(fig_pm_game)
         img_ht_game, fig_ht_game = draw_corridor_heatmap(df_game)
         plt.close(fig_ht_game)
-
         top_n_xt = 10 if force_avg else 5
         img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt)
         plt.close(fig_xt_game)
 
         col_m1, col_m2, col_m3 = st.columns(3)
+
         with col_m1:
             st.markdown(
-                '<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">🗺️ Pass Map</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                '📋 Pass Map</div>',
+                unsafe_allow_html=True)
             st.image(img_pm_game, use_container_width=True)
+
         with col_m2:
             st.markdown(
-                '<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">🔥 Zone Heatmap (Destination)</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                '📊 Zone Heatmap (Destination)</div>',
+                unsafe_allow_html=True)
             st.image(img_ht_game, use_container_width=True)
+
         with col_m3:
             label = "Top 10" if force_avg else "Top 5"
             st.markdown(
-                f'<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">⚡ {label} Pass Impact</div>',
-                unsafe_allow_html=True,
-            )
+                f'<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                f'⚡ {label} Pass Impact</div>',
+                unsafe_allow_html=True)
             st.image(img_xt_game, use_container_width=True)
 
-        st.markdown("&nbsp;", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+
         col_s1, col_s2, col_s3 = st.columns(3)
         total_impact_value = float(
-            df_game.loc[df_game["is_won"], "delta_xt_adj"].sum()
-        )
+            df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
 
         if force_avg:
             with col_s1:
-                section_card(
-                    "📋 Pass Overview",
-                    C_BLUE_PASTEL,
-                    [
-                        ("Total Passes (AVG)", f"{s_game['total_p90']:.1f}"),
-                        ("% Accuracy", f"{s_game['accuracy_pct']:.1f}%"),
-                    ],
-                )
+                section_card("📋 Pass Overview", C_BLUE_PASTEL, [
+                    ("Total Passes (AVG)", f"{s_game['total_p90']:.1f}"),
+                    ("% Accuracy", f"{s_game['accuracy_pct']:.1f}%"),
+                ])
             with col_s2:
-                section_card(
-                    "📊 Advanced",
-                    C_GREEN_PASTEL,
-                    [
-                        (
-                            "Advanced Passes (AVG)",
-                            f"{s_game['advanced_passes_p90']:.1f}",
-                        ),
-                        (
-                            "% Advanced Accuracy",
-                            f"{s_game['advanced_accuracy_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                section_card("📊 Advanced", C_GREEN_PASTEL, [
+                    ("Advanced Passes (AVG)", f"{s_game['advanced_passes_p90']:.1f}"),
+                    ("% Advanced Accuracy", f"{s_game['advanced_accuracy_pct']:.1f}%"),
+                ])
             with col_s3:
-                section_card(
-                    "⚡ Impact",
-                    C_AMBER_PASTEL,
-                    [
-                        (
-                            "Pass Impact Value (AVG)",
-                            f"{s_game['xt_p90']:.1f}",
-                            f"Total: {total_impact_value:.3f}",
-                        ),
-                        ("% Positive Impact", f"{s_game['pos_pct']:.1f}%"),
-                    ],
-                )
+                section_card("⚡ Impact", C_AMBER_PASTEL, [
+                    ("Pass Impact Value (AVG)", f"{s_game['xt_p90']:.1f}",
+                     f"Total: {total_impact_value:.3f}"),
+                    ("% Positive Impact", f"{s_game['pos_pct']:.1f}%"),
+                ])
             col_s3_exp = st.columns(3)[2]
             with col_s3_exp:
                 expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.35)
                 expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.20)
                 st.markdown(
                     f'<div style="background:{expl_bg};border:1px solid {expl_bd};'
-                    f'border-radius:8px;padding:8px 12px;margin-top:4px;font-size:11px;color:#d0d0e8;">'
-                    f'<strong>💡 Explanation</strong><br>'
-                    f"Calculation used to measure the cumulative offensive value generated through passing.<br>"
-                    f"% of passes that generated a positive impact based on where they ended on the field."
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+                    f'border-radius:12px;padding:12px 14px;margin-top:4px;'
+                    f'font-size:11px;color:#c0c0d8">'
+                    f'<strong>Explanation</strong><br>'
+                    f'Pass Impact Value — Calculation used to evaluate the offensive '
+                    f'value added by a pass.<br>'
+                    f'% Positive Impact — Passes that generated a positive impact '
+                    f'based on where they ended on the field.'
+                    f'</div>',
+                    unsafe_allow_html=True)
         else:
             with col_s1:
-                cmp_section_card(
-                    "📋 Pass Overview",
-                    C_BLUE_PASTEL,
-                    [
-                        (
-                            "Total Passes (AVG)",
-                            s_game["total_p90"],
-                            f"{s_avg['total_p90']:.1f}",
-                        ),
-                        (
-                            "% Accuracy",
-                            s_game["accuracy_pct"],
-                            s_avg["accuracy_pct"],
-                            f"{s_game['accuracy_pct']:.1f}%",
-                            f"{s_avg['accuracy_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                cmp_section_card("📋 Pass Overview", C_BLUE_PASTEL, [
+                    ("Total Passes (AVG)", s_game["total_p90"],
+                     f"{s_avg['total_p90']:.1f}"),
+                    ("% Accuracy", s_game["accuracy_pct"], s_avg["accuracy_pct"],
+                     f"{s_game['accuracy_pct']:.1f}%", f"{s_avg['accuracy_pct']:.1f}%"),
+                ])
             with col_s2:
-                cmp_section_card(
-                    "📊 Advanced",
-                    C_GREEN_PASTEL,
-                    [
-                        (
-                            "Advanced Passes (AVG)",
-                            s_game["advanced_passes_p90"],
-                            f"{s_avg['advanced_passes_p90']:.1f}",
-                        ),
-                        (
-                            "% Advanced Accuracy",
-                            s_game["advanced_accuracy_pct"],
-                            s_avg["advanced_accuracy_pct"],
-                            f"{s_game['advanced_accuracy_pct']:.1f}%",
-                            f"{s_avg['advanced_accuracy_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                cmp_section_card("📊 Advanced", C_GREEN_PASTEL, [
+                    ("Advanced Passes (AVG)", s_game["advanced_passes_p90"],
+                     f"{s_avg['advanced_passes_p90']:.1f}"),
+                    ("% Advanced Accuracy", s_game["advanced_accuracy_pct"],
+                     s_avg["advanced_accuracy_pct"],
+                     f"{s_game['advanced_accuracy_pct']:.1f}%",
+                     f"{s_avg['advanced_accuracy_pct']:.1f}%"),
+                ])
             with col_s3:
-                cmp_section_card(
-                    "⚡ Impact",
-                    C_AMBER_PASTEL,
-                    [
-                        (
-                            "Pass Impact Value (AVG)",
-                            s_game["xt_p90"],
-                            s_avg["xt_p90"],
-                            f"{s_game['xt_p90']:.1f}",
-                            f"{s_avg['xt_p90']:.1f}",
-                            "",
-                            f"Total: {total_impact_value:.3f}",
-                        ),
-                        (
-                            "% Positive Impact",
-                            s_game["pos_pct"],
-                            s_avg["pos_pct"],
-                            f"{s_game['pos_pct']:.1f}%",
-                            f"{s_avg['pos_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                cmp_section_card("⚡ Impact", C_AMBER_PASTEL, [
+                    ("Pass Impact Value (AVG)", s_game["xt_p90"], s_avg["xt_p90"],
+                     f"{s_game['xt_p90']:.1f}", f"{s_avg['xt_p90']:.1f}",
+                     "", f"Total: {total_impact_value:.3f}"),
+                    ("% Positive Impact", s_game["pos_pct"], s_avg["pos_pct"],
+                     f"{s_game['pos_pct']:.1f}%", f"{s_avg['pos_pct']:.1f}%"),
+                ])
             col_s3_exp = st.columns(3)[2]
             with col_s3_exp:
                 expl_bg = _hex_to_rgba(C_AMBER_PASTEL, 0.35)
                 expl_bd = _hex_to_rgba(C_AMBER_PASTEL, 0.20)
                 st.markdown(
                     f'<div style="background:{expl_bg};border:1px solid {expl_bd};'
-                    f'border-radius:8px;padding:8px 12px;margin-top:4px;font-size:11px;color:#d0d0e8;">'
-                    f'<strong>💡 Explanation</strong><br>'
-                    f"Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>"
-                    f"% Positive Impact — Passes that generated a positive impact based on where they ended on the field."
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+                    f'border-radius:12px;padding:12px 14px;margin-top:4px;'
+                    f'font-size:11px;color:#c0c0d8">'
+                    f'<strong>Explanation</strong><br>'
+                    f'Pass Impact Value — Calculation used to evaluate the offensive '
+                    f'value added by a pass.<br>'
+                    f'% Positive Impact — Passes that generated a positive impact '
+                    f'based on where they ended on the field.'
+                    f'</div>',
+                    unsafe_allow_html=True)
 
     with sub_tab_def:
         st.markdown("### Match Filter")
         col_df1, col_df2 = st.columns(2)
+
         with col_df1:
             def_match_options = ["All Matches"] + list(defensive_dfs_by_match.keys())
             selected_def_match = st.selectbox(
-                "Select Match", options=def_match_options, index=0, key="def_match"
-            )
+                "Select Match", options=def_match_options, index=0, key="def_match")
+
         with col_df2:
             def_type_filter = st.radio(
-                "Filter Type",
-                ["All", "Duels Only", "Interceptions Only"],
-                horizontal=True,
-                key="def_type_filter",
-            )
+                "Filter Type", ["All", "Duels Only", "Interceptions Only"],
+                horizontal=True, key="def_type_filter")
 
         if selected_def_match == "All Matches":
             df_def_game_raw = pd.concat(
-                defensive_dfs_by_match.values(), ignore_index=True
-            )
+                defensive_dfs_by_match.values(), ignore_index=True)
             def_match_name_for_stats = "All Matches"
         else:
             df_def_game_raw = defensive_dfs_by_match[selected_def_match].copy()
@@ -1891,12 +1331,12 @@ with tab_dash:
         if def_type_filter == "Duels Only":
             df_def_game = df_def_game_raw[df_def_game_raw["is_duel"]].copy()
         elif def_type_filter == "Interceptions Only":
-            df_def_game = df_def_game_raw[df_def_game_raw["is_interception"]].copy()
+            df_def_game = df_def_game_raw[
+                df_def_game_raw["is_interception"]].copy()
         else:
             df_def_game = df_def_game_raw.copy()
 
         d_game = compute_defensive_stats(df_def_game, def_match_name_for_stats)
-
         def_all = [
             compute_defensive_stats(defensive_dfs_by_match[m], m)
             for m in defensive_dfs_by_match
@@ -1925,149 +1365,91 @@ with tab_dash:
         plt.close(fig_funnel)
 
         col_dm1, col_dm2, col_dm3 = st.columns(3)
+
         with col_dm1:
             st.markdown(
-                '<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">🛡️ Defensive Actions Map</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                '🛡️ Defensive Actions Map</div>',
+                unsafe_allow_html=True)
             st.image(img_def_map, use_container_width=True)
+
         with col_dm2:
             st.markdown(
-                '<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">🔥 Defensive Heatmap</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                '🔥 Defensive Heatmap</div>',
+                unsafe_allow_html=True)
             st.image(img_def_hm, use_container_width=True)
+
         with col_dm3:
             st.markdown(
-                '<div style="text-align:center;font-weight:600;font-size:0.9rem;color:#d0d0e8;margin-bottom:6px;">🛡️ Funnel Protection Actions</div>',
-                unsafe_allow_html=True,
-            )
+                '<div style="font-size:14px;font-weight:600;color:#5b9bd5;margin-bottom:6px">'
+                '🛡️ Funnel Protection Actions</div>',
+                unsafe_allow_html=True)
             st.image(img_funnel, use_container_width=True)
 
-        st.markdown("&nbsp;", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
         col_ds1, col_ds2, col_ds3 = st.columns(3)
+
         if force_avg_def:
             with col_ds1:
-                section_card(
-                    "🛡️ General",
-                    C_BLUE_PASTEL,
-                    [
-                        (
-                            "Defensive Actions (AVG)",
-                            f"{d_game['total_actions_p90']:.1f}",
-                        ),
-                        (
-                            "Actions in Own Half (AVG)",
-                            f"{d_game['actions_own_p90']:.1f}",
-                        ),
-                    ],
-                )
+                section_card("🛡️ General", C_BLUE_PASTEL, [
+                    ("Defensive Actions (AVG)", f"{d_game['total_actions_p90']:.1f}"),
+                    ("Actions in Own Half (AVG)", f"{d_game['actions_own_p90']:.1f}"),
+                ])
             with col_ds2:
-                section_card(
-                    "⚔️ Duels",
-                    C_GREEN_PASTEL,
-                    [
-                        ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
-                        ("% Duels Won", f"{d_game['duels_won_pct']:.1f}%"),
-                        (
-                            "Interceptions (AVG)",
-                            f"{d_game['interceptions_p90']:.1f}",
-                        ),
-                    ],
-                )
+                section_card("⚔️ Duels and Interceptions", C_GREEN_PASTEL, [
+                    ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
+                    ("% Duels Won", f"{d_game['duels_won_pct']:.1f}%"),
+                    ("Interceptions (AVG)", f"{d_game['interceptions_p90']:.1f}"),
+                ])
             with col_ds3:
-                section_card(
-                    "🛡️ Funnel Protection",
-                    C_AMBER_PASTEL,
-                    [
-                        (
-                            "Funnel Protection Actions (AVG)",
-                            f"{d_game['funnel_actions_p90']:.1f}",
-                        ),
-                        (
-                            "%FPA Successful",
-                            f"{d_game['funnel_success_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                section_card("🛡️ Funnel Protection", C_AMBER_PASTEL, [
+                    ("Funnel Protection Actions (AVG)",
+                     f"{d_game['funnel_actions_p90']:.1f}"),
+                    ("%FPA Successful", f"{d_game['funnel_success_pct']:.1f}%"),
+                ])
         else:
             with col_ds1:
-                cmp_section_card(
-                    "🛡️ General",
-                    C_BLUE_PASTEL,
-                    [
-                        (
-                            "Defensive Actions (AVG)",
-                            d_game["total_actions_p90"],
-                            f"{d_avg['total_actions_p90']:.1f}",
-                        ),
-                        (
-                            "Actions in Own Half (AVG)",
-                            d_game["actions_own_p90"],
-                            f"{d_avg['actions_own_p90']:.1f}",
-                        ),
-                    ],
-                )
+                cmp_section_card("🛡️ General", C_BLUE_PASTEL, [
+                    ("Defensive Actions (AVG)", d_game["total_actions_p90"],
+                     f"{d_avg['total_actions_p90']:.1f}"),
+                    ("Actions in Own Half (AVG)", d_game["actions_own_p90"],
+                     f"{d_avg['actions_own_p90']:.1f}"),
+                ])
             with col_ds2:
-                cmp_section_card(
-                    "⚔️ Duels and Interceptions",
-                    C_GREEN_PASTEL,
-                    [
-                        (
-                            "Defensive Duels (AVG)",
-                            d_game["duels_p90"],
-                            f"{d_avg['duels_p90']:.1f}",
-                        ),
-                        (
-                            "% Duels Won",
-                            d_game["duels_won_pct"],
-                            d_avg["duels_won_pct"],
-                            f"{d_game['duels_won_pct']:.1f}%",
-                            f"{d_avg['duels_won_pct']:.1f}%",
-                        ),
-                        (
-                            "Interceptions (AVG)",
-                            d_game["interceptions_p90"],
-                            d_avg["interceptions_p90"],
-                            f"{d_game['interceptions_p90']:.1f}",
-                            f"{d_avg['interceptions_p90']:.1f}",
-                        ),
-                    ],
-                )
+                cmp_section_card("⚔️ Duels and Interceptions", C_GREEN_PASTEL, [
+                    ("Defensive Duels (AVG)", d_game["duels_p90"],
+                     f"{d_avg['duels_p90']:.1f}"),
+                    ("% Duels Won", d_game["duels_won_pct"],
+                     d_avg["duels_won_pct"],
+                     f"{d_game['duels_won_pct']:.1f}%",
+                     f"{d_avg['duels_won_pct']:.1f}%"),
+                    ("Interceptions (AVG)", d_game["interceptions_p90"],
+                     d_avg["interceptions_p90"],
+                     f"{d_game['interceptions_p90']:.1f}",
+                     f"{d_avg['interceptions_p90']:.1f}"),
+                ])
             with col_ds3:
-                cmp_section_card(
-                    "🛡️ Funnel Protection",
-                    C_AMBER_PASTEL,
-                    [
-                        (
-                            "Funnel Protection Actions (AVG)",
-                            d_game["funnel_actions_p90"],
-                            f"{d_avg['funnel_actions_p90']:.1f}",
-                        ),
-                        (
-                            "%FPA Successful",
-                            d_game["funnel_success_pct"],
-                            d_avg["funnel_success_pct"],
-                            f"{d_game['funnel_success_pct']:.1f}%",
-                            f"{d_avg['funnel_success_pct']:.1f}%",
-                        ),
-                    ],
-                )
+                cmp_section_card("🛡️ Funnel Protection", C_AMBER_PASTEL, [
+                    ("Funnel Protection Actions (AVG)", d_game["funnel_actions_p90"],
+                     f"{d_avg['funnel_actions_p90']:.1f}"),
+                    ("%FPA Successful", d_game["funnel_success_pct"],
+                     d_avg["funnel_success_pct"],
+                     f"{d_game['funnel_success_pct']:.1f}%",
+                     f"{d_avg['funnel_success_pct']:.1f}%"),
+                ])
 
         # ── PDF EXPORT SECTION ──
         st.markdown("---")
         st.markdown("### 📄 Export Complete Dashboard")
 
-        if st.button(
-            "📸 Download Screenshot (PDF) — Passes + Defensive Actions",
-            use_container_width=True,
-        ):
+        if st.button("📸 Download Screenshot (PDF) — Passes + Defensive Actions",
+                     use_container_width=True):
             with st.spinner("Generating PDF with dashboard screenshots..."):
                 df_all_passes = pd.concat(dfs_by_match.values(), ignore_index=True)
                 df_all_def = pd.concat(
-                    defensive_dfs_by_match.values(), ignore_index=True
-                )
+                    defensive_dfs_by_match.values(), ignore_index=True)
 
                 img_pm_all, _ = draw_pass_map(df_all_passes)
                 plt.close()
