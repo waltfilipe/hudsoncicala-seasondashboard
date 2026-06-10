@@ -1228,7 +1228,7 @@ with tab_dash:
                 ])
             with col_s3:
                 section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value (AVG)",f"{s_game['xt_p90']:.1f}",f"Total: {total_impact_value:.3f}"),
+                    ("Pass Impact Value (AVG)",f"{s_game['xt_p90']:.1f}",f"Total: {total_impact_value:.1f}"),
                     ("% Positive Impact",f"{s_game['pos_pct']:.1f}%")
                 ])
             col_s3_exp=st.columns(3)[2]
@@ -1238,8 +1238,8 @@ with tab_dash:
                 <div style="background:{expl_bg};border:1px solid {expl_bd};border-radius:8px;padding:10px 12px;margin-top:4px">
                 <div style="color:#d0d0e8;font-size:11px;font-weight:600;margin-bottom:4px">Explanation</div>
                 <div style="color:#9a9aba;font-size:10px;line-height:1.5">
-                <b>Pass Impact Value</b> — Calculation used to evaluate the offensive value added by a pass.<br>
-                <b>% Positive Impact</b> — Passes that generated a positive impact based on where they ended on the field.
+                <b></b> Calculation used to measure the cumulative offensive value generated through passing.<br>
+                <b></b> % of passes that generated a positive impact based on where they ended on the field.
                 </div></div>
                 ''',unsafe_allow_html=True)
         else:
@@ -1336,7 +1336,7 @@ with tab_dash:
                     ("Actions in Own Half (AVG)",f"{d_game['actions_own_p90']:.1f}")
                 ])
             with col_ds2:
-                section_card("⚔️ Duels and Interceptions",C_GREEN_PASTEL,[
+                section_card("⚔️ Duels",C_GREEN_PASTEL,[
                     ("Defensive Duels (AVG)",f"{d_game['duels_p90']:.1f}"),
                     ("% Duels Won",f"{d_game['duels_won_pct']:.1f}%"),
                     ("Interceptions (AVG)",f"{d_game['interceptions_p90']:.1f}")
