@@ -14,6 +14,7 @@ from PIL import Image
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
 from matplotlib.colors import Normalize, LinearSegmentedColormap
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.gridspec import GridSpec
 
 # PAGE CONFIG
@@ -63,6 +64,12 @@ PENALTY_AREA_X = 18.0
 FUNNEL_X_EXTEND = 33.0
 PENALTY_AREA_Y_MIN = 18.0
 PENALTY_AREA_Y_MAX = 62.0
+
+# PDF STYLE CONSTANTS
+PDF_BG = "#0d0d1f"
+PDF_TEXT_WHITE = "#ffffff"
+PDF_TEXT_LIGHT = "#d0d0e8"
+PDF_TEXT_DIM = "#5a5a7a"
 
 def _hex_to_rgba(hex_color, alpha=1.0):
     if hex_color.startswith('#'):
@@ -859,19 +866,55 @@ def cmp_section_card(title, border_color, items):
     html+='</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-# SCREENSHOT HELPER
-def combine_images_vertical(images, gap=20, bg_color="#0d0d1f"):
-    widths = [img.width for img in images]
-    heights = [img.height for img in images]
-    total_width = max(widths)
-    total_height = sum(heights) + gap * (len(images) - 1) + 40
-    combined = Image.new('RGB', (total_width, total_height), color=bg_color)
-    y_offset = 20
-    for img in images:
-        x_offset = (total_width - img.width) // 2
-        combined.paste(img, (x_offset, y_offset))
-        y_offset += img.height + gap
-    return combined
+# PDF EXPORT FUNCTION
+def _pdf_add_footer(fig, page_num, total_pages):
+    ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999)
+    ax.axis("off")
+    ax.text(0, 0.5, "Hudson Cicala — 2026 Season", ha="left", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax.text(1, 0.5, f"{page_num}/{total_pages}", ha="right", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
+    ax.plot([0, 1], [1, 1], color="#3a3a5c", linewidth=0.4, transform=ax.transAxes)
+
+def export_dashboard_pdf(passes_images, def_images):
+    """Generate a 2-page PDF with passes and defensive screenshots"""
+    total_pages = 2
+    buf = BytesIO()
+    with PdfPages(buf) as pdf:
+        # ── PAGE 1: PASSES ──
+        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
+        fig.suptitle("Passes Analysis", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
+
+        labels_p = ["Pass Map", "Zone Heatmap (Destination)", "Top 10 Pass Impact"]
+        for i, img in enumerate(passes_images):
+            left = 0.03 + i * 0.33
+            width = 0.31
+            ax_img = fig.add_axes([left, 0.12, width, 0.78])
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            ax_img.text(0.5, 1.01, labels_p[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
+
+        _pdf_add_footer(fig, 1, total_pages)
+        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
+        plt.close(fig)
+
+        # ── PAGE 2: DEFENSIVE ──
+        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
+        fig.suptitle("Defensive Actions", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
+
+        labels_d = ["Defensive Actions Map", "Defensive Heatmap", "Funnel Protection Actions"]
+        for i, img in enumerate(def_images):
+            left = 0.03 + i * 0.33
+            width = 0.31
+            ax_img = fig.add_axes([left, 0.12, width, 0.78])
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            ax_img.text(0.5, 1.01, labels_d[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
+
+        _pdf_add_footer(fig, 2, total_pages)
+        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
+        plt.close(fig)
+
+    buf.seek(0)
+    return buf
 
 # DRAW HELPERS (PITCH)
 def _base_pitch(bg="#1a1a2e"):
@@ -1105,22 +1148,6 @@ with tab_dash:
             st.markdown(f'<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);margin-bottom:4px">{label} Pass Impact</div>',unsafe_allow_html=True)
             st.image(img_xt_game,use_container_width=True)
 
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-        match_label_p = selected_match.replace(" ", "_").replace("(", "").replace(")", "")
-        buf_passes = BytesIO()
-        combined_passes = combine_images_vertical([img_pm_game, img_ht_game, img_xt_game])
-        combined_passes.save(buf_passes, format="PNG")
-        buf_passes.seek(0)
-        st.download_button(
-            "📸 Download Screenshot - Passes",
-            data=buf_passes,
-            file_name=f"passes_{match_label_p}.png",
-            mime="image/png",
-            key="dl_passes",
-            use_container_width=True
-        )
-
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         col_s1, col_s2, col_s3 = st.columns(3)
@@ -1203,22 +1230,6 @@ with tab_dash:
             st.markdown('<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);margin-bottom:4px">Funnel Protection Actions</div>',unsafe_allow_html=True)
             st.image(img_funnel,use_container_width=True)
 
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-        match_label_d = selected_def_match.replace(" ", "_").replace("(", "").replace(")", "")
-        buf_def = BytesIO()
-        combined_def = combine_images_vertical([img_def_map, img_def_hm, img_funnel])
-        combined_def.save(buf_def, format="PNG")
-        buf_def.seek(0)
-        st.download_button(
-            "📸 Download Screenshot - Defensive",
-            data=buf_def,
-            file_name=f"defensive_{match_label_d}.png",
-            mime="image/png",
-            key="dl_def",
-            use_container_width=True
-        )
-
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         col_ds1,col_ds2,col_ds3=st.columns(3)
@@ -1236,3 +1247,33 @@ with tab_dash:
                 cmp_section_card("⚔️ Duels",C_GREEN_PASTEL,[("Defensive Duels (AVG)",d_game["duels_p90"],f"{d_avg['duels_p90']:.1f}"),("% Duels Won",d_game["duels_won_pct"],d_avg["duels_won_pct"],f"{d_game['duels_won_pct']:.1f}%",f"{d_avg['duels_won_pct']:.1f}%")])
             with col_ds3:
                 cmp_section_card("👁️ Interceptions",C_AMBER_PASTEL,[("Interceptions (AVG)",d_game["interceptions_p90"],f"{d_avg['interceptions_p90']:.1f}"),("Interceptions in Opp Field (AVG)",d_game["interceptions_attacking_p90"],f"{d_avg['interceptions_attacking_p90']:.1f}")])
+
+    # ── PDF EXPORT SECTION ──
+    st.markdown("---")
+    st.markdown("### 📄 Export Complete Dashboard")
+
+    if st.button("📸 Download Screenshot (PDF) — Passes + Defensive Actions", use_container_width=True):
+        with st.spinner("Generating PDF with dashboard screenshots..."):
+            df_all_passes = pd.concat(dfs_by_match.values(), ignore_index=True)
+            df_all_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
+
+            img_pm_all, _ = draw_pass_map(df_all_passes); plt.close()
+            img_ht_all, _ = draw_corridor_heatmap(df_all_passes); plt.close()
+            img_xt_all, _ = draw_top_xt_map(df_all_passes, top_n=10); plt.close()
+
+            img_dm_all, _ = draw_defensive_map(df_all_def); plt.close()
+            img_dhm_all, _ = draw_defensive_heatmap(df_all_def); plt.close()
+            img_fn_all, _ = draw_funnel_protection_map(df_all_def); plt.close()
+
+            pdf_bytes = export_dashboard_pdf(
+                [img_pm_all, img_ht_all, img_xt_all],
+                [img_dm_all, img_dhm_all, img_fn_all]
+            )
+
+            st.download_button(
+                "📥 Save PDF",
+                data=pdf_bytes,
+                file_name="hudson_cicala_dashboard.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
