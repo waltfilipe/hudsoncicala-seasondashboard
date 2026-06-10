@@ -97,7 +97,7 @@ def _hex_to_rgba(hex_color, alpha=1.0):
 def get_lane(y):
     if y >= LANE_LEFT_MIN:
         return "left"
-    elif y &lt; LANE_RIGHT_MAX:
+    elif y < LANE_RIGHT_MAX:
         return "right"
     return "center"
 
@@ -105,7 +105,7 @@ def distance_to_goal(x, y):
     return np.sqrt((GOAL_X - x) ** 2 + (GOAL_Y - y) ** 2)
 
 def is_progressive_pass(x_start, y_start, x_end, y_end):
-    if x_start &lt; 35:
+    if x_start < 35:
         return False
     start_dist = distance_to_goal(x_start, y_start)
     end_dist = distance_to_goal(x_end, y_end)
@@ -118,7 +118,7 @@ def classify_pass_direction(x_start, y_start, x_end, y_end):
     dy = y_end - y_start
     dist = np.sqrt(dx ** 2 + dy ** 2)
     angle_deg = np.degrees(np.arctan2(abs(dy), dx))
-    if angle_deg &lt;= 45.0:
+    if angle_deg <= 45.0:
         return "forward"
     if angle_deg >= 135.0:
         return "backward"
@@ -160,7 +160,7 @@ def xt_value(x, y):
     return float(XT_GRID[iy, ix])
 
 def is_in_funnel_zone(x, y):
-    return x &lt;= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN &lt;= y &lt;= PENALTY_AREA_Y_MAX
+    return x <= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN <= y <= PENALTY_AREA_Y_MAX
 
 # BASE PASSES
 BASE_MATCHES_DATA = {
@@ -691,7 +691,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     )
     progressive_attempted = progressive_total + progressive_unsuccessful
     progressive_accuracy = (progressive_total / progressive_attempted * 100.0) if progressive_attempted else 0.0
-    to_final_third = (df["x_start"] &lt; FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
+    to_final_third = (df["x_start"] < FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
     to_final_third_total = int(to_final_third.sum())
     to_final_third_success = int((to_final_third & df["is_won"]).sum())
     to_final_third_accuracy = (to_final_third_success / to_final_third_total * 100.0) if to_final_third_total else 0.0
@@ -701,7 +701,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     long_acc_pct = (long_success / long_total * 100.0) if long_total > 0 else 0.0
     dz_mask = df["is_won"] & (
         (df["x_end"] >= 100.0) |
-        ((df["x_end"] >= 80.0) & (df["x_end"] &lt; 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] &lt; LANE_LEFT_MIN))
+        ((df["x_end"] >= 80.0) & (df["x_end"] < 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] < LANE_LEFT_MIN))
     )
     dz_passes = int(dz_mask.sum())
     fwd = int(df["is_forward"].sum())
@@ -711,7 +711,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     pos_pct = (pos_count / total * 100.0) if total > 0 else 0.0
     high_xt = int((df["delta_xt_adj"] > 0.1).sum())
     sum_dxt = float(df.loc[df["is_won"], "delta_xt_adj"].sum())
-    neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] &lt; 0), "delta_xt_adj"].sum())
+    neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] < 0), "delta_xt_adj"].sum())
     advanced_successful = progressive_total + to_final_third_success
     advanced_attempted = progressive_attempted + to_final_third_total
     advanced_accuracy_pct = (advanced_successful / advanced_attempted * 100.0) if advanced_attempted else 0.0
@@ -776,7 +776,7 @@ def _safe_pct_diff(a: float, b: float) -> float:
 def _arrow_html(val_game: float, val_avg: float) -> str:
     if np.isclose(val_game, val_avg, atol=1e-9):
         return ""
-    if abs(val_game) &lt; 1 and abs(val_avg) &lt; 1:
+    if abs(val_game) < 1 and abs(val_avg) < 1:
         return ""
     if val_game > val_avg:
         pct = _safe_pct_diff(val_game, val_avg)
@@ -865,7 +865,7 @@ def draw_corridor_heatmap(df):
         arr = np.zeros(6, dtype=int)
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]
-            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] &lt; x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] &lt; y1)).sum())
+            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
         counts[cname] = arr
     all_vals = np.concatenate([counts[c] for c in counts]); vmax = max(1, int(all_vals.max()))
     cmap = LinearSegmentedColormap.from_list("wr", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
@@ -875,7 +875,7 @@ def draw_corridor_heatmap(df):
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]; value = counts[cname][i]
             ax.add_patch(Rectangle((x0_, y0), x1_ - x0_, y1 - y0, facecolor=cmap(norm(value)), edgecolor=(1,1,1,0.12), lw=0.5, alpha=0.95, zorder=2))
-            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center", color="#000000" if value &lt;= threshold else "#ffffff", fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
+            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center", color="#000000" if value <= threshold else "#ffffff", fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
@@ -932,7 +932,7 @@ def draw_defensive_heatmap(df):
     corridors={"Right":(LANE_LEFT_MIN,FIELD_Y),"Center":(LANE_RIGHT_MAX,LANE_LEFT_MIN),"Left":(0.0,LANE_RIGHT_MAX)}
     corridor_data={}
     for cname,(y0,y1) in corridors.items():
-        mask=(df["y"]>=y0)&(df["y"]&lt;y1); corr_df=df[mask]; total=len(corr_df); duels_total=int(corr_df["is_duel"].sum()); duels_won=int(corr_df["is_duel_won"].sum())
+        mask=(df["y"]>=y0)&(df["y"]<y1); corr_df=df[mask]; total=len(corr_df); duels_total=int(corr_df["is_duel"].sum()); duels_won=int(corr_df["is_duel_won"].sum())
         corridor_data[cname]={"count":total,"duels_won":duels_won,"duels_total":duels_total}
     all_counts=[d["count"] for d in corridor_data.values()]; vmax=max(1,max(all_counts))
     cmap_def=LinearSegmentedColormap.from_list("def_corr",["#ffffff","#dbeafe","#93c5fd","#3b82f6","#1d4ed8","#1e3a5f"]); norm=Normalize(vmin=0,vmax=vmax); threshold=max(1,vmax*0.35)
@@ -942,7 +942,7 @@ def draw_defensive_heatmap(df):
         ax.add_patch(Rectangle((0,y0),FIELD_X,y1-y0,facecolor=cmap_def(norm(value)),edgecolor=(1,1,1,0.15),lw=0.5,alpha=0.95,zorder=2))
         duel_pct=(d["duels_won"]/d["duels_total"]*100) if d["duels_total"]>0 else None
         label=f"{cname}\nTotal: {value}\nWon: {d['duels_won']}/{d['duels_total']} ({duel_pct:.0f}%)" if duel_pct is not None else f"{cname}\nTotal: {value}"
-        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",color="#000000" if value&lt;=threshold else "#ffffff",fontsize=9,fontweight="600",zorder=4)
+        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",color="#000000" if value<=threshold else "#ffffff",fontsize=9,fontweight="600",zorder=4)
     ax.axhline(y=LANE_LEFT_MIN,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
@@ -956,7 +956,6 @@ def _pdf_add_footer(fig, page_num, total_pages):
     ax.plot([0,1],[1,1],color="#3a3a5c",linewidth=0.4,transform=ax.transAxes)
 
 def _pdf_stat_box_rounded(fig, left, bottom, width, height, label, value, accent_color):
-    """Rounded-corner stat card for PDF."""
     ax = fig.add_axes([left, bottom, width, height], zorder=1)
     ax.patch.set_visible(False)
     ax.axis("off")
@@ -974,32 +973,23 @@ def _pdf_stat_box_rounded(fig, left, bottom, width, height, label, value, accent
     return ax
 
 def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
-    """Professional cover with match list."""
     match_names = list(dfs_by_match.keys())
     fig = plt.figure(figsize=(PDF_PAGE_W, PDF_PAGE_H), facecolor=PDF_BG)
     ax_bg = fig.add_axes([0,0,1,1], zorder=0); ax_bg.set_facecolor(PDF_BG); ax_bg.axis("off")
-
-    # Accent bars
     ax_bar = fig.add_axes([0,0.90,1,0.003], zorder=1); ax_bar.axis("off")
     ax_bar.add_patch(Rectangle((0,0),1,1,facecolor=PDF_ACCENT_BLUE,transform=ax_bar.transAxes,alpha=0.7))
     ax_bar2 = fig.add_axes([0,0.10,1,0.003], zorder=1); ax_bar2.axis("off")
     ax_bar2.add_patch(Rectangle((0,0),1,1,facecolor=PDF_ACCENT_BLUE,transform=ax_bar2.transAxes,alpha=0.7))
-
-    # Photo left
     if os.path.exists(img_path):
         try:
             img = Image.open(img_path); ax_img = fig.add_axes([0.05,0.18,0.32,0.68], zorder=3)
             ax_img.imshow(img); ax_img.axis("off")
             for s in ax_img.spines.values(): s.set_visible(True); s.set_color(PDF_ACCENT_BLUE); s.set_linewidth(2.5)
         except: pass
-
-    # Title block (raised higher)
     ax_t = fig.add_axes([0.42,0.62,0.52,0.26], zorder=2); ax_t.axis("off")
     ax_t.text(0,0.82,"PERFORMANCE REPORT",ha="left",va="center",fontsize=30,fontweight=800,color=PDF_TEXT_WHITE,transform=ax_t.transAxes)
     ax_t.text(0,0.52,"Hudson Cicala",ha="left",va="center",fontsize=24,fontweight=600,color=PDF_ACCENT_BLUE,transform=ax_t.transAxes)
     ax_t.text(0,0.28,"Midfielder | 2026 Season",ha="left",va="center",fontsize=13,color=PDF_TEXT_LIGHT,transform=ax_t.transAxes)
-
-    # Match list
     ax_ml = fig.add_axes([0.42,0.14,0.52,0.44], zorder=2); ax_ml.axis("off")
     ax_ml.text(0,1.0,f"Matches Analyzed: {len(match_names)}",ha="left",va="top",fontsize=11,fontweight=600,color=PDF_ACCENT_BLUE,transform=ax_ml.transAxes)
     mid = (len(match_names)+1)//2
@@ -1008,20 +998,16 @@ def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
         y = 0.85 - i * 0.06
         ax_ml.text(0.02, y, f"• {name1}", ha="left", va="top", fontsize=7.5, color=PDF_TEXT_LIGHT, transform=ax_ml.transAxes)
         ax_ml.text(0.52, y, f"• {name2}" if name2 else "", ha="left", va="top", fontsize=7.5, color=PDF_TEXT_LIGHT, transform=ax_ml.transAxes)
-
     ax_info = fig.add_axes([0.42,0.04,0.52,0.04], zorder=2); ax_info.axis("off")
     ax_info.text(0,0.5,"Report generated — June 2026",ha="left",va="center",fontsize=8,color=PDF_TEXT_DIM,transform=ax_info.transAxes)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_stats_page(pdf, page_num=2, total_pages=4):
-    """Stats page with rounded-corner boxes and more spacing."""
     all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
     all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
     ps = compute_stats(all_pass_df,"All Matches"); ds = compute_defensive_stats(all_def_df,"All Matches")
     fig = plt.figure(figsize=(PDF_PAGE_W, PDF_PAGE_H), facecolor=PDF_BG)
     fig.suptitle("Season Overview", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
-
-    # ── PASSING STATS ──
     ax_s1 = fig.add_axes([0.06,0.87,0.30,0.035], zorder=0); ax_s1.axis("off")
     ax_s1.text(0,0.5,"PASSING STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_ACCENT_BLUE)
     _pdf_stat_box_rounded(fig,0.06,0.78,0.27,0.07,"Total Passes (AVG)",f"{ps['total_p90']:.1f}",PDF_ACCENT_BLUE)
@@ -1030,12 +1016,8 @@ def _make_stats_page(pdf, page_num=2, total_pages=4):
     _pdf_stat_box_rounded(fig,0.365,0.69,0.27,0.07,"% Advanced Accuracy",f"{ps['advanced_accuracy_pct']:.1f}%",PDF_ACCENT_GREEN)
     _pdf_stat_box_rounded(fig,0.67,0.78,0.27,0.07,"Pass Impact Value (AVG)",f"{ps['xt_p90']:.3f}",PDF_ACCENT_AMBER)
     _pdf_stat_box_rounded(fig,0.67,0.69,0.27,0.07,"% Positive Impact",f"{ps['pos_pct']:.1f}%",PDF_ACCENT_AMBER)
-
-    # More spacing between sections
     ax_sep = fig.add_axes([0.06,0.60,0.88,0.004], zorder=0); ax_sep.axis("off")
     ax_sep.plot([0,1],[0.5,0.5],color=PDF_BORDER,linewidth=0.4,transform=ax_sep.transAxes)
-
-    # ── DEFENSIVE STATS ──
     ax_s2 = fig.add_axes([0.06,0.56,0.35,0.035], zorder=0); ax_s2.axis("off")
     ax_s2.text(0,0.5,"DEFENSIVE STATS",ha="left",va="center",fontsize=11,fontweight=700,color=PDF_ACCENT_BLUE)
     _pdf_stat_box_rounded(fig,0.06,0.47,0.27,0.07,"Defensive Actions (AVG)",f"{ds['total_actions_p90']:.1f}",PDF_ACCENT_BLUE)
@@ -1044,53 +1026,42 @@ def _make_stats_page(pdf, page_num=2, total_pages=4):
     _pdf_stat_box_rounded(fig,0.365,0.38,0.27,0.07,"% Duels Won",f"{ds['duels_won_pct']:.1f}%",PDF_ACCENT_GREEN)
     _pdf_stat_box_rounded(fig,0.67,0.47,0.27,0.07,"Interceptions (AVG)",f"{ds['interceptions_p90']:.1f}",PDF_ACCENT_AMBER)
     _pdf_stat_box_rounded(fig,0.67,0.38,0.27,0.07,"Interceptions in Opp. Field (AVG)",f"{ds['interceptions_attacking_p90']:.1f}",PDF_ACCENT_AMBER)
-
     ax_note = fig.add_axes([0.06,0.03,0.88,0.03], zorder=0); ax_note.axis("off")
     ax_note.text(0,0.5,"All stats normalized per 90 minutes played",ha="left",va="center",fontsize=7,color=PDF_TEXT_DIM,transform=ax_note.transAxes)
     _pdf_add_footer(fig,page_num,total_pages)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_passes_maps_page(pdf, page_num=3, total_pages=4):
-    """Pass maps with smaller maps, moved down from titles."""
     fig = plt.figure(figsize=(PDF_PAGE_W, 10), facecolor=PDF_BG)
     fig.suptitle("Passes Analysis — All Matches", fontsize=18, fontweight=700,
                  color=PDF_TEXT_WHITE, y=0.95, x=0.06, ha="left")
     all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
-
     ax1 = fig.add_axes([0.04, 0.52, 0.92, 0.38], zorder=0); ax1.axis("off")
     img_pm, fig_pm = draw_pass_map(all_pass_df); ax1.imshow(img_pm)
     ax1.set_title("Pass Map", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=10); plt.close(fig_pm)
-
     ax2 = fig.add_axes([0.04, 0.04, 0.44, 0.40], zorder=0); ax2.axis("off")
     img_hm, fig_hm = draw_corridor_heatmap(all_pass_df); ax2.imshow(img_hm)
     ax2.set_title("Zone Heatmap (Destination)", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=8); plt.close(fig_hm)
-
     ax3 = fig.add_axes([0.52, 0.04, 0.44, 0.40], zorder=0); ax3.axis("off")
     img_xt, fig_xt = draw_top_xt_map(all_pass_df, top_n=10); ax3.imshow(img_xt)
     ax3.set_title("Top 10 Pass Impact", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=8); plt.close(fig_xt)
-
     _pdf_add_footer(fig,page_num,total_pages)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
 def _make_defensive_maps_page(pdf, page_num=4, total_pages=4):
-    """Defensive maps with smaller maps, moved down from titles."""
     fig = plt.figure(figsize=(PDF_PAGE_W, 10), facecolor=PDF_BG)
     fig.suptitle("Defensive Actions — All Matches", fontsize=18, fontweight=700,
                  color=PDF_TEXT_WHITE, y=0.95, x=0.06, ha="left")
     all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
-
     ax1 = fig.add_axes([0.04, 0.52, 0.92, 0.38], zorder=0); ax1.axis("off")
     img_dm, fig_dm = draw_defensive_map(all_def_df); ax1.imshow(img_dm)
     ax1.set_title("Defensive Actions Map", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=10); plt.close(fig_dm)
-
     ax2 = fig.add_axes([0.04, 0.04, 0.44, 0.40], zorder=0); ax2.axis("off")
     img_hm, fig_hm = draw_defensive_heatmap(all_def_df); ax2.imshow(img_hm)
     ax2.set_title("Defensive Heatmap", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=8); plt.close(fig_hm)
-
     ax3 = fig.add_axes([0.52, 0.04, 0.44, 0.40], zorder=0); ax3.axis("off")
     img_fun, fig_fun = draw_funnel_protection_map(all_def_df); ax3.imshow(img_fun)
     ax3.set_title("Funnel Protection", color=PDF_TEXT_WHITE, fontsize=11, fontweight=600, pad=8); plt.close(fig_fun)
-
     _pdf_add_footer(fig,page_num,total_pages)
     pdf.savefig(fig,facecolor=PDF_BG,bbox_inches="tight"); plt.close(fig)
 
@@ -1099,15 +1070,12 @@ def _make_match_mini_report(pdf, m_name, page_num, total_pages):
     fig = plt.figure(figsize=(PDF_PAGE_W, 9.5), facecolor=PDF_BG)
     fig.suptitle(f"Match Report: {m_name}", fontsize=16, fontweight=700,
                  color=PDF_TEXT_WHITE, y=0.95, x=0.06, ha="left")
-
     ax1 = fig.add_axes([0.04, 0.50, 0.44, 0.40], zorder=0); ax1.axis("off")
     img_pm, fig_pm = draw_pass_map(df_m); ax1.imshow(img_pm)
     ax1.set_title("Pass Map", color=PDF_TEXT_WHITE, fontsize=10, fontweight=600, pad=8); plt.close(fig_pm)
-
     ax2 = fig.add_axes([0.52, 0.50, 0.44, 0.40], zorder=0); ax2.axis("off")
     img_xt, fig_xt = draw_top_xt_map(df_m, top_n=5); ax2.imshow(img_xt)
     ax2.set_title("Top 5 Pass Impact", color=PDF_TEXT_WHITE, fontsize=10, fontweight=600, pad=8); plt.close(fig_xt)
-
     stat_pairs = [
         ("Total Passes (AVG)",f"{s_m['total_p90']:.1f}","% Accuracy",f"{s_m['accuracy_pct']:.1f}%",PDF_ACCENT_BLUE),
         ("Advanced Passes (AVG)",f"{s_m['advanced_passes_p90']:.1f}","% Advanced Accuracy",f"{s_m['advanced_accuracy_pct']:.1f}%",PDF_ACCENT_GREEN),
@@ -1117,7 +1085,6 @@ def _make_match_mini_report(pdf, m_name, page_num, total_pages):
         left = 0.04 + col*0.32
         _pdf_stat_box_rounded(fig, left, 0.32, 0.29, 0.11, l1, v1, ac)
         _pdf_stat_box_rounded(fig, left, 0.19, 0.29, 0.11, l2, v2, ac)
-
     mins = get_match_minutes(m_name)
     ax_info = fig.add_axes([0.04,0.02,0.92,0.04],zorder=0); ax_info.axis("off")
     ax_info.text(0,0.5,f"Minutes played: {mins:.0f}'",ha="left",va="center",fontsize=7,color=PDF_TEXT_DIM,transform=ax_info.transAxes)
@@ -1191,7 +1158,7 @@ with tab_dash:
             if pass_filter == "Successful": return df[df["is_won"]].copy()
             if pass_filter == "Unsuccessful": return df[~df["is_won"]].copy()
             if pass_filter == "Progressive": return df[df["progressive"]].copy()
-            if pass_filter == "Final Third": return df[(df["x_start"]&lt;FINAL_THIRD_LINE_X)&(df["x_end"]>=FINAL_THIRD_LINE_X)].copy()
+            if pass_filter == "Final Third": return df[(df["x_start"]<FINAL_THIRD_LINE_X)&(df["x_end"]>=FINAL_THIRD_LINE_X)].copy()
             return df.copy()
         df_game = apply_filter(df_game_filtered); s_game = compute_stats(df_game, match_name_for_stats)
         s_avg = {}
