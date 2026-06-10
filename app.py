@@ -97,7 +97,7 @@ def _hex_to_rgba(hex_color, alpha=1.0):
 def get_lane(y):
     if y >= LANE_LEFT_MIN:
         return "left"
-    elif y < LANE_RIGHT_MAX:
+    elif y &lt; LANE_RIGHT_MAX:
         return "right"
     return "center"
 
@@ -105,7 +105,7 @@ def distance_to_goal(x, y):
     return np.sqrt((GOAL_X - x) ** 2 + (GOAL_Y - y) ** 2)
 
 def is_progressive_pass(x_start, y_start, x_end, y_end):
-    if x_start < 35:
+    if x_start &lt; 35:
         return False
     start_dist = distance_to_goal(x_start, y_start)
     end_dist = distance_to_goal(x_end, y_end)
@@ -118,7 +118,7 @@ def classify_pass_direction(x_start, y_start, x_end, y_end):
     dy = y_end - y_start
     dist = np.sqrt(dx ** 2 + dy ** 2)
     angle_deg = np.degrees(np.arctan2(abs(dy), dx))
-    if angle_deg <= 45.0:
+    if angle_deg &lt;= 45.0:
         return "forward"
     if angle_deg >= 135.0:
         return "backward"
@@ -160,7 +160,7 @@ def xt_value(x, y):
     return float(XT_GRID[iy, ix])
 
 def is_in_funnel_zone(x, y):
-    return x <= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN <= y <= PENALTY_AREA_Y_MAX
+    return x &lt;= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN &lt;= y &lt;= PENALTY_AREA_Y_MAX
 
 # BASE PASSES
 BASE_MATCHES_DATA = {
@@ -691,7 +691,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     )
     progressive_attempted = progressive_total + progressive_unsuccessful
     progressive_accuracy = (progressive_total / progressive_attempted * 100.0) if progressive_attempted else 0.0
-    to_final_third = (df["x_start"] < FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
+    to_final_third = (df["x_start"] &lt; FINAL_THIRD_LINE_X) & (df["x_end"] >= FINAL_THIRD_LINE_X)
     to_final_third_total = int(to_final_third.sum())
     to_final_third_success = int((to_final_third & df["is_won"]).sum())
     to_final_third_accuracy = (to_final_third_success / to_final_third_total * 100.0) if to_final_third_total else 0.0
@@ -701,7 +701,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     long_acc_pct = (long_success / long_total * 100.0) if long_total > 0 else 0.0
     dz_mask = df["is_won"] & (
         (df["x_end"] >= 100.0) |
-        ((df["x_end"] >= 80.0) & (df["x_end"] < 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] < LANE_LEFT_MIN))
+        ((df["x_end"] >= 80.0) & (df["x_end"] &lt; 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] &lt; LANE_LEFT_MIN))
     )
     dz_passes = int(dz_mask.sum())
     fwd = int(df["is_forward"].sum())
@@ -711,7 +711,7 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     pos_pct = (pos_count / total * 100.0) if total > 0 else 0.0
     high_xt = int((df["delta_xt_adj"] > 0.1).sum())
     sum_dxt = float(df.loc[df["is_won"], "delta_xt_adj"].sum())
-    neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] < 0), "delta_xt_adj"].sum())
+    neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] &lt; 0), "delta_xt_adj"].sum())
     advanced_successful = progressive_total + to_final_third_success
     advanced_attempted = progressive_attempted + to_final_third_total
     advanced_accuracy_pct = (advanced_successful / advanced_attempted * 100.0) if advanced_attempted else 0.0
@@ -776,7 +776,7 @@ def _safe_pct_diff(a: float, b: float) -> float:
 def _arrow_html(val_game: float, val_avg: float) -> str:
     if np.isclose(val_game, val_avg, atol=1e-9):
         return ""
-    if abs(val_game) < 1 and abs(val_avg) < 1:
+    if abs(val_game) &lt; 1 and abs(val_avg) &lt; 1:
         return ""
     if val_game > val_avg:
         pct = _safe_pct_diff(val_game, val_avg)
@@ -865,7 +865,7 @@ def draw_corridor_heatmap(df):
         arr = np.zeros(6, dtype=int)
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]
-            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
+            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] &lt; x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] &lt; y1)).sum())
         counts[cname] = arr
     all_vals = np.concatenate([counts[c] for c in counts]); vmax = max(1, int(all_vals.max()))
     cmap = LinearSegmentedColormap.from_list("wr", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
@@ -875,7 +875,7 @@ def draw_corridor_heatmap(df):
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]; value = counts[cname][i]
             ax.add_patch(Rectangle((x0_, y0), x1_ - x0_, y1 - y0, facecolor=cmap(norm(value)), edgecolor=(1,1,1,0.12), lw=0.5, alpha=0.95, zorder=2))
-            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center", color="#000000" if value <= threshold else "#ffffff", fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
+            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center", color="#000000" if value &lt;= threshold else "#ffffff", fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
@@ -942,7 +942,7 @@ def draw_defensive_heatmap(df):
         ax.add_patch(Rectangle((0,y0),FIELD_X,y1-y0,facecolor=cmap_def(norm(value)),edgecolor=(1,1,1,0.15),lw=0.5,alpha=0.95,zorder=2))
         duel_pct=(d["duels_won"]/d["duels_total"]*100) if d["duels_total"]>0 else None
         label=f"{cname}\nTotal: {value}\nWon: {d['duels_won']}/{d['duels_total']} ({duel_pct:.0f}%)" if duel_pct is not None else f"{cname}\nTotal: {value}"
-        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",color="#000000" if value<=threshold else "#ffffff",fontsize=9,fontweight="600",zorder=4)
+        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",color="#000000" if value&lt;=threshold else "#ffffff",fontsize=9,fontweight="600",zorder=4)
     ax.axhline(y=LANE_LEFT_MIN,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
