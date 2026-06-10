@@ -859,6 +859,20 @@ def cmp_section_card(title, border_color, items):
     html+='</div>'
     st.markdown(html, unsafe_allow_html=True)
 
+# SCREENSHOT HELPER
+def combine_images_vertical(images, gap=20, bg_color="#0d0d1f"):
+    widths = [img.width for img in images]
+    heights = [img.height for img in images]
+    total_width = max(widths)
+    total_height = sum(heights) + gap * (len(images) - 1) + 40
+    combined = Image.new('RGB', (total_width, total_height), color=bg_color)
+    y_offset = 20
+    for img in images:
+        x_offset = (total_width - img.width) // 2
+        combined.paste(img, (x_offset, y_offset))
+        y_offset += img.height + gap
+    return combined
+
 # DRAW HELPERS (PITCH)
 def _base_pitch(bg="#1a1a2e"):
     pitch = Pitch(pitch_type="statsbomb", pitch_color=bg, line_color="#ffffff", line_alpha=0.95)
@@ -1091,7 +1105,23 @@ with tab_dash:
             st.markdown(f'<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);margin-bottom:4px">{label} Pass Impact</div>',unsafe_allow_html=True)
             st.image(img_xt_game,use_container_width=True)
 
-        st.markdown("<div style='height:10px'></div>",unsafe_allow_html=True)
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+        match_label_p = selected_match.replace(" ", "_").replace("(", "").replace(")", "")
+        buf_passes = BytesIO()
+        combined_passes = combine_images_vertical([img_pm_game, img_ht_game, img_xt_game])
+        combined_passes.save(buf_passes, format="PNG")
+        buf_passes.seek(0)
+        st.download_button(
+            "📸 Download Screenshot - Passes",
+            data=buf_passes,
+            file_name=f"passes_{match_label_p}.png",
+            mime="image/png",
+            key="dl_passes",
+            use_container_width=True
+        )
+
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         col_s1, col_s2, col_s3 = st.columns(3)
 
@@ -1173,7 +1203,23 @@ with tab_dash:
             st.markdown('<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);margin-bottom:4px">Funnel Protection Actions</div>',unsafe_allow_html=True)
             st.image(img_funnel,use_container_width=True)
 
-        st.markdown("<div style='height:10px'></div>",unsafe_allow_html=True)
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+        match_label_d = selected_def_match.replace(" ", "_").replace("(", "").replace(")", "")
+        buf_def = BytesIO()
+        combined_def = combine_images_vertical([img_def_map, img_def_hm, img_funnel])
+        combined_def.save(buf_def, format="PNG")
+        buf_def.seek(0)
+        st.download_button(
+            "📸 Download Screenshot - Defensive",
+            data=buf_def,
+            file_name=f"defensive_{match_label_d}.png",
+            mime="image/png",
+            key="dl_def",
+            use_container_width=True
+        )
+
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         col_ds1,col_ds2,col_ds3=st.columns(3)
         if force_avg_def:
