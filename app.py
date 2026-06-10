@@ -1087,370 +1087,310 @@ def draw_defensive_heatmap(df):
     return _save_fig(fig), fig
 
 # PDF EXPORT FUNCTIONS
-def _make_stat_text_card(title, items, color_hex):
-    """Generate a styled text block for the PDF."""
-    lines = [f"{title}"]
-    lines.append("─" * 30)
-    for k, v in items:
-        lines.append(f"{k}:  {v}")
-    return "\n".join(lines)
+def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
+    """Create a professional cover page."""
+    fig = plt.figure(figsize=(11, 8.5), facecolor="#0f0f23")
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
-def export_report_pdf():
-    """Generate a professional overview PDF with maps side-by-side and stats below."""
-    buf = BytesIO()
+    # Background gradient effect
+    ax_bg = fig.add_axes([0, 0, 1, 1], zorder=0)
+    ax_bg.set_facecolor("#0f0f23")
+    ax_bg.axis("off")
+
+    # Top accent line
+    ax_line = fig.add_axes([0.1, 0.82, 0.8, 0.005], zorder=1)
+    ax_line.axis("off")
+    ax_line.add_patch(Rectangle((0, 0), 1, 1, facecolor="#5b9bd5", transform=ax_line.transAxes))
+
+    # Title
+    ax_title = fig.add_axes([0.12, 0.60, 0.76, 0.18], zorder=2)
+    ax_title.axis("off")
+    ax_title.text(0.5, 0.85, "PERFORMANCE REPORT", ha="center", va="center",
+                  fontsize=32, fontweight=800, color="#ffffff",
+                  transform=ax_title.transAxes, letter_spacing=8)
+    ax_title.text(0.5, 0.45, "Hudson Cicala", ha="center", va="center",
+                  fontsize=24, fontweight=600, color="#5b9bd5",
+                  transform=ax_title.transAxes)
+    ax_title.text(0.5, 0.12, "2026 Season | Pass & Defensive Analysis", ha="center", va="center",
+                  fontsize=12, color="#8888aa", transform=ax_title.transAxes)
+
+    # Photo
+    if os.path.exists(img_path):
+        try:
+            img = Image.open(img_path)
+            ax_img = fig.add_axes([0.38, 0.12, 0.24, 0.30], zorder=3)
+            ax_img.imshow(img)
+            ax_img.axis("off")
+            for spine in ax_img.spines.values():
+                spine.set_visible(True)
+                spine.set_color("#5b9bd5")
+                spine.set_linewidth(2)
+        except Exception:
+            pass
+
+    # Bottom accent line
+    ax_line2 = fig.add_axes([0.1, 0.08, 0.8, 0.005], zorder=1)
+    ax_line2.axis("off")
+    ax_line2.add_patch(Rectangle((0, 0), 1, 1, facecolor="#5b9bd5", transform=ax_line2.transAxes))
+
+    # Footer
+    ax_footer = fig.add_axes([0.12, 0.03, 0.76, 0.04], zorder=2)
+    ax_footer.axis("off")
+    ax_footer.text(0.5, 0.5,
+                   f"Report generated on 06/10/2026 | {len(dfs_by_match)} matches analyzed",
+                   ha="center", va="center", fontsize=8, color="#666688",
+                   transform=ax_footer.transAxes)
+
+    pdf.savefig(fig, facecolor="#0f0f23", bbox_inches="tight")
+    plt.close(fig)
+
+def _make_stats_page(pdf):
+    """Create a clean, professional stats overview page."""
     all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
     all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
-    stats_all = compute_stats(all_pass_df, "All Matches")
-    def_stats = compute_defensive_stats(all_def_df, "All Matches")
+    ps = compute_stats(all_pass_df, "All Matches")
+    ds = compute_defensive_stats(all_def_df, "All Matches")
 
-    with PdfPages(buf) as pdf:
-        # ── PAGE 1: TITLE + OVERALL STATS ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor="#1a1a2e")
-        plt.subplots_adjust(top=0.92, bottom=0.05, left=0.05, right=0.95, hspace=0.3)
+    fig = plt.figure(figsize=(11, 8.5), facecolor="#1a1a2e")
+    fig.suptitle("Season Overview", fontsize=20, fontweight=700,
+                 color="#ffffff", y=0.96)
 
-        # Title
-        fig.suptitle("Performance Report — Hudson Cicala", fontsize=18, fontweight=700,
-                     color="#ffffff", y=0.97)
-        fig.text(0.5, 0.93, f"2026 Season  |  {len(dfs_by_match)} Matches Analyzed",
-                 ha="center", fontsize=10, color="#8888aa")
+    # ── Section 1: Passing Stats ──
+    ax_section1 = fig.add_axes([0.06, 0.81, 0.88, 0.02], zorder=0)
+    ax_section1.axis("off")
+    ax_section1.text(0, 0.5, "PASSING STATS", ha="left", va="center",
+                     fontsize=11, fontweight=600, color="#5b9bd5")
 
-        # Stat cards - row 1: Passes
-        pass_items = [
-            ("Total Passes (AVG)", f"{stats_all['total_p90']:.1f}"),
-            ("% Accuracy", f"{stats_all['accuracy_pct']:.1f}%"),
-            ("Advanced Passes (AVG)", f"{stats_all['advanced_passes_p90']:.1f}"),
-            ("% Advanced Accuracy", f"{stats_all['advanced_accuracy_pct']:.1f}%"),
-            ("Pass Impact Value (AVG)", f"{stats_all['xt_p90']:.3f}"),
-            ("% Positive Impact", f"{stats_all['pos_pct']:.1f}%"),
-        ]
-        gs = GridSpec(2, 3, figure=fig, hspace=0.4, wspace=0.3)
+    pass_labels = [
+        ("Total Passes (AVG)", f"{ps['total_p90']:.1f}"),
+        ("% Accuracy", f"{ps['accuracy_pct']:.1f}%"),
+        ("Advanced Passes (AVG)", f"{ps['advanced_passes_p90']:.1f}"),
+        ("% Advanced Accuracy", f"{ps['advanced_accuracy_pct']:.1f}%"),
+        ("Pass Impact Value (AVG)", f"{ps['xt_p90']:.3f}"),
+        ("% Positive Impact", f"{ps['pos_pct']:.1f}%"),
+    ]
 
-        for idx, (label, val) in enumerate(pass_items):
-            row, col = divmod(idx, 3)
-            ax = fig.add_subplot(gs[row, col])
-            ax.set_facecolor("#252540")
-            ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True)
-                spine.set_color("#444466")
-                spine.set_linewidth(0.8)
-            ax.text(0.5, 0.65, val, ha="center", va="center", fontsize=20,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.25, label, ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
-
-        # Separator
-        ax = fig.add_subplot(gs[1, :])
-        ax.set_facecolor("#1a1a2e")
+    for idx, (label, val) in enumerate(pass_labels):
+        row = idx // 3
+        col = idx % 3
+        left = 0.06 + col * 0.31
+        top = 0.72 - row * 0.12
+        ax = fig.add_axes([left, top, 0.28, 0.09], zorder=1)
+        ax.set_facecolor("#252540")
         ax.axis("off")
-        ax.text(0.5, 0.00, "─" * 60, ha="center", va="center", fontsize=10,
-                color="#444466", transform=ax.transAxes)
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("#3a3a5c")
+            spine.set_linewidth(0.8)
+        ax.text(0.5, 0.68, val, ha="center", va="center", fontsize=22,
+                fontweight=700, color="#ffffff", transform=ax.transAxes)
+        ax.text(0.5, 0.25, label, ha="center", va="center", fontsize=9,
+                fontweight=500, color="#eeeeff", transform=ax.transAxes)
 
-        pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig)
+    # Separator
+    ax_sep = fig.add_axes([0.06, 0.53, 0.88, 0.01], zorder=0)
+    ax_sep.axis("off")
+    ax_sep.plot([0, 1], [0.5, 0.5], color="#3a3a5c", linewidth=0.5,
+                transform=ax_sep.transAxes)
 
-        # ── PAGE 2: PASSES MAPS SIDE BY SIDE ──
-        fig_map = plt.figure(figsize=(11, 7), facecolor="#1a1a2e")
-        fig_map.suptitle("Passes Analysis — All Matches", fontsize=16, fontweight=700,
-                         color="#ffffff", y=0.97)
+    # ── Section 2: Defensive Stats ──
+    ax_section2 = fig.add_axes([0.06, 0.48, 0.88, 0.02], zorder=0)
+    ax_section2.axis("off")
+    ax_section2.text(0, 0.5, "DEFENSIVE STATS", ha="left", va="center",
+                     fontsize=11, fontweight=600, color="#5b9bd5")
 
-        gs_map = GridSpec(2, 3, figure=fig_map, hspace=0.35, wspace=0.25,
-                          height_ratios=[1.8, 1])
+    def_labels = [
+        ("Defensive Actions (AVG)", f"{ds['total_actions_p90']:.1f}"),
+        ("Actions in Opp. Field (AVG)", f"{ds['actions_attacking_p90']:.1f}"),
+        ("Defensive Duels (AVG)", f"{ds['duels_p90']:.1f}"),
+        ("% Duels Won", f"{ds['duels_won_pct']:.1f}%"),
+        ("Interceptions (AVG)", f"{ds['interceptions_p90']:.1f}"),
+        ("Interceptions in Opp Field (AVG)", f"{ds['interceptions_attacking_p90']:.1f}"),
+    ]
 
-        # Row 1: 3 maps side by side
-        ax1 = fig_map.add_subplot(gs_map[0, 0])
-        ax2 = fig_map.add_subplot(gs_map[0, 1])
-        ax3 = fig_map.add_subplot(gs_map[0, 2])
+    for idx, (label, val) in enumerate(def_labels):
+        row = idx // 3
+        col = idx % 3
+        left = 0.06 + col * 0.31
+        top = 0.39 - row * 0.12
+        ax = fig.add_axes([left, top, 0.28, 0.09], zorder=1)
+        ax.set_facecolor("#252540")
+        ax.axis("off")
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("#3a3a5c")
+            spine.set_linewidth(0.8)
+        ax.text(0.5, 0.68, val, ha="center", va="center", fontsize=22,
+                fontweight=700, color="#ffffff", transform=ax.transAxes)
+        ax.text(0.5, 0.25, label, ha="center", va="center", fontsize=9,
+                fontweight=500, color="#eeeeff", transform=ax.transAxes)
 
-        # Embed pass map as image
-        img_pm, fig_pm = draw_pass_map(all_pass_df)
-        ax1.imshow(img_pm)
-        ax1.axis("off")
-        ax1.set_title("Pass Map", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    # Info text
+    ax_info = fig.add_axes([0.06, 0.03, 0.88, 0.04], zorder=0)
+    ax_info.axis("off")
+    ax_info.text(0.5, 0.5,
+                 f"All stats normalized per 90 minutes | {len(dfs_by_match)} matches collected",
+                 ha="center", va="center", fontsize=8, color="#666688",
+                 transform=ax_info.transAxes)
 
-        # Embed heatmap as image
-        img_hm, fig_hm = draw_corridor_heatmap(all_pass_df)
-        ax2.imshow(img_hm)
-        ax2.axis("off")
-        ax2.set_title("Zone Heatmap (Destination)", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
+    plt.close(fig)
 
-        # Embed top XT as image
-        img_xt, fig_xt = draw_top_xt_map(all_pass_df, top_n=10)
-        ax3.imshow(img_xt)
-        ax3.axis("off")
-        ax3.set_title("Top 10 Pass Impact", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+def _make_passes_maps_page(pdf):
+    """Passes maps organized one below the other."""
+    fig = plt.figure(figsize=(11, 10), facecolor="#1a1a2e")
+    fig.suptitle("Passes Analysis — All Matches", fontsize=18, fontweight=700,
+                 color="#ffffff", y=0.97)
 
-        plt.close(fig_pm); plt.close(fig_hm); plt.close(fig_xt)
+    all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
 
-        # Row 2: Pass stats below maps
-        pass_row2 = [
-            ("Total Passes (AVG)", f"{stats_all['total_p90']:.1f}"),
-            ("% Accuracy", f"{stats_all['accuracy_pct']:.1f}%"),
-            ("Advanced Passes (AVG)", f"{stats_all['advanced_passes_p90']:.1f}"),
-            ("% Advanced Accuracy", f"{stats_all['advanced_accuracy_pct']:.1f}%"),
-            ("Pass Impact Value (AVG)", f"{stats_all['xt_p90']:.3f}"),
-            ("% Positive Impact", f"{stats_all['pos_pct']:.1f}%"),
-        ]
-        for idx, (label, val) in enumerate(pass_row2):
-            ax = fig_map.add_subplot(gs_map[1, idx % 3] if idx < 3 else gs_map[1, idx % 3])
-            if idx < 3:
-                ax = fig_map.add_subplot(gs_map[1, idx])
-            else:
-                # Reuse: only 3 cells in row 2, display first 3
-                pass
-        # Actually simpler: just place 3 stat boxes below
-        for ax in fig_map.get_axes():
-            if ax == ax1 or ax == ax2 or ax == ax3:
-                continue
-            ax.remove()
+    # Pass Map
+    ax1 = fig.add_axes([0.04, 0.52, 0.92, 0.44], zorder=0)
+    ax1.axis("off")
+    img_pm, fig_pm = draw_pass_map(all_pass_df)
+    ax1.imshow(img_pm)
+    ax1.set_title("Pass Map", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_pm)
 
-        for idx in range(3):
-            ax = fig_map.add_subplot(gs_map[1, idx])
-            ax.set_facecolor("#252540")
-            ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True)
-                spine.set_color("#444466")
-                spine.set_linewidth(0.8)
-            label, val = pass_row2[idx * 2], pass_row2[idx * 2 + 1]
-            ax.text(0.5, 0.70, val[1], ha="center", va="center", fontsize=18,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.30, val[0], ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
+    # Zone Heatmap
+    ax2 = fig.add_axes([0.04, 0.01, 0.44, 0.44], zorder=0)
+    ax2.axis("off")
+    img_hm, fig_hm = draw_corridor_heatmap(all_pass_df)
+    ax2.imshow(img_hm)
+    ax2.set_title("Zone Heatmap (Destination)", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_hm)
 
-        pdf.savefig(fig_map, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig_map)
+    # Top Pass Impact
+    ax3 = fig.add_axes([0.52, 0.01, 0.44, 0.44], zorder=0)
+    ax3.axis("off")
+    img_xt, fig_xt = draw_top_xt_map(all_pass_df, top_n=10)
+    ax3.imshow(img_xt)
+    ax3.set_title("Top 10 Pass Impact", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_xt)
 
-        # ── PAGE 3: DEFENSIVE MAPS SIDE BY SIDE ──
-        fig_def_page = plt.figure(figsize=(11, 7), facecolor="#1a1a2e")
-        fig_def_page.suptitle("Defensive Actions — All Matches", fontsize=16, fontweight=700,
-                              color="#ffffff", y=0.97)
+    pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
+    plt.close(fig)
 
-        gs_def = GridSpec(2, 3, figure=fig_def_page, hspace=0.35, wspace=0.25,
-                          height_ratios=[1.8, 1])
+def _make_defensive_maps_page(pdf):
+    """Defensive maps organized one below the other."""
+    fig = plt.figure(figsize=(11, 10), facecolor="#1a1a2e")
+    fig.suptitle("Defensive Actions — All Matches", fontsize=18, fontweight=700,
+                 color="#ffffff", y=0.97)
 
-        axd1 = fig_def_page.add_subplot(gs_def[0, 0])
-        axd2 = fig_def_page.add_subplot(gs_def[0, 1])
-        axd3 = fig_def_page.add_subplot(gs_def[0, 2])
+    all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
 
-        img_def_map, fig_dm = draw_defensive_map(all_def_df)
-        axd1.imshow(img_def_map)
-        axd1.axis("off")
-        axd1.set_title("Defensive Actions Map", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    # Defensive Map
+    ax1 = fig.add_axes([0.04, 0.52, 0.92, 0.44], zorder=0)
+    ax1.axis("off")
+    img_dm, fig_dm = draw_defensive_map(all_def_df)
+    ax1.imshow(img_dm)
+    ax1.set_title("Defensive Actions Map", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_dm)
 
-        img_def_hm, fig_dhm = draw_defensive_heatmap(all_def_df)
-        axd2.imshow(img_def_hm)
-        axd2.axis("off")
-        axd2.set_title("Defensive Heatmap", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    # Defensive Heatmap
+    ax2 = fig.add_axes([0.04, 0.01, 0.44, 0.44], zorder=0)
+    ax2.axis("off")
+    img_hm, fig_hm = draw_defensive_heatmap(all_def_df)
+    ax2.imshow(img_hm)
+    ax2.set_title("Defensive Heatmap", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_hm)
 
-        img_fun, fig_fun = draw_funnel_protection_map(all_def_df)
-        axd3.imshow(img_fun)
-        axd3.axis("off")
-        axd3.set_title("Funnel Protection", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    # Funnel Protection
+    ax3 = fig.add_axes([0.52, 0.01, 0.44, 0.44], zorder=0)
+    ax3.axis("off")
+    img_fun, fig_fun = draw_funnel_protection_map(all_def_df)
+    ax3.imshow(img_fun)
+    ax3.set_title("Funnel Protection", color="#ffffff", fontsize=11, fontweight=600, pad=6)
+    plt.close(fig_fun)
 
-        plt.close(fig_dm); plt.close(fig_dhm); plt.close(fig_fun)
+    pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
+    plt.close(fig)
 
-        def_row2 = [
-            ("Defensive Actions (AVG)", f"{def_stats['total_actions_p90']:.1f}"),
-            ("Actions in Opp. Field (AVG)", f"{def_stats['actions_attacking_p90']:.1f}"),
-            ("Defensive Duels (AVG)", f"{def_stats['duels_p90']:.1f}"),
-            ("% Duels Won", f"{def_stats['duels_won_pct']:.1f}%"),
-            ("Interceptions (AVG)", f"{def_stats['interceptions_p90']:.1f}"),
-            ("Interceptions in Opp Field (AVG)", f"{def_stats['interceptions_attacking_p90']:.1f}"),
-        ]
-        for idx in range(3):
-            ax = fig_def_page.add_subplot(gs_def[1, idx])
-            ax.set_facecolor("#252540")
-            ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True)
-                spine.set_color("#444466")
-                spine.set_linewidth(0.8)
-            label, val = def_row2[idx * 2], def_row2[idx * 2 + 1]
-            ax.text(0.5, 0.70, val[1], ha="center", va="center", fontsize=18,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.30, val[0], ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
+def _make_match_mini_report(pdf, m_name):
+    """Per-match mini report page."""
+    df_m = dfs_by_match[m_name]
+    s_m = compute_stats(df_m, m_name)
 
-        pdf.savefig(fig_def_page, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig_def_page)
+    fig = plt.figure(figsize=(11, 9), facecolor="#1a1a2e")
+    fig.suptitle(f"Match Report: {m_name}", fontsize=16, fontweight=700,
+                 color="#ffffff", y=0.97)
 
+    # Pass Map
+    ax1 = fig.add_axes([0.04, 0.50, 0.44, 0.44], zorder=0)
+    ax1.axis("off")
+    img_pm, fig_pm = draw_pass_map(df_m)
+    ax1.imshow(img_pm)
+    ax1.set_title("Pass Map", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    plt.close(fig_pm)
+
+    # Top 5 Impact
+    ax2 = fig.add_axes([0.52, 0.50, 0.44, 0.44], zorder=0)
+    ax2.axis("off")
+    img_xt, fig_xt = draw_top_xt_map(df_m, top_n=5)
+    ax2.imshow(img_xt)
+    ax2.set_title("Top 5 Pass Impact", color="#ffffff", fontsize=10, fontweight=600, pad=4)
+    plt.close(fig_xt)
+
+    # Stats row
+    stat_items = [
+        ("Total Passes (AVG)", f"{s_m['total_p90']:.1f}"),
+        ("% Accuracy", f"{s_m['accuracy_pct']:.1f}%"),
+        ("Advanced Passes (AVG)", f"{s_m['advanced_passes_p90']:.1f}"),
+        ("% Advanced Accuracy", f"{s_m['advanced_accuracy_pct']:.1f}%"),
+        ("Pass Impact Value (AVG)", f"{s_m['xt_p90']:.3f}"),
+        ("% Positive Impact", f"{s_m['pos_pct']:.1f}%"),
+    ]
+    for idx, (label, val) in enumerate(stat_items):
+        row = idx // 3
+        col = idx % 3
+        left = 0.04 + col * 0.32
+        top = 0.30 - row * 0.16
+        ax = fig.add_axes([left, top, 0.29, 0.13], zorder=1)
+        ax.set_facecolor("#252540")
+        ax.axis("off")
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("#3a3a5c")
+            spine.set_linewidth(0.8)
+        ax.text(0.5, 0.68, val, ha="center", va="center", fontsize=20,
+                fontweight=700, color="#ffffff", transform=ax.transAxes)
+        ax.text(0.5, 0.25, label, ha="center", va="center", fontsize=8,
+                fontweight=500, color="#eeeeff", transform=ax.transAxes)
+
+    # Minutes info
+    mins = get_match_minutes(m_name)
+    ax_info = fig.add_axes([0.04, 0.02, 0.92, 0.04], zorder=0)
+    ax_info.axis("off")
+    ax_info.text(0.5, 0.5, f"Minutes played: {mins:.0f}'",
+                 ha="center", va="center", fontsize=8, color="#666688",
+                 transform=ax_info.transAxes)
+
+    pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
+    plt.close(fig)
+
+def export_report_pdf():
+    """Generate a professional overview PDF."""
+    buf = BytesIO()
+    with PdfPages(buf) as pdf:
+        _make_cover_page(pdf)
+        _make_stats_page(pdf)
+        _make_passes_maps_page(pdf)
+        _make_defensive_maps_page(pdf)
     buf.seek(0)
     return buf
 
 def export_complete_report_pdf():
     """Generate a comprehensive PDF with per-match mini reports."""
     buf = BytesIO()
-    all_pass_df = pd.concat(dfs_by_match.values(), ignore_index=True)
-    all_def_df = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
-    stats_all = compute_stats(all_pass_df, "All Matches")
-    def_stats = compute_defensive_stats(all_def_df, "All Matches")
-
     with PdfPages(buf) as pdf:
-        # ── PAGE 1: TITLE PAGE ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor="#1a1a2e")
-        fig.suptitle("Complete Performance Report", fontsize=22, fontweight=700,
-                     color="#ffffff", y=0.85)
-        fig.text(0.5, 0.78, "Hudson Cicala  |  2026 Season", ha="center",
-                 fontsize=14, color="#c0c0dd")
-        fig.text(0.5, 0.74, f"{len(dfs_by_match)} Matches Analyzed", ha="center",
-                 fontsize=11, color="#8888aa")
-        ax = fig.gca()
-        ax.set_facecolor("#1a1a2e")
-        ax.axis("off")
-        pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig)
-
-        # ── PAGE 2: OVERVIEW (same as report_pdf page 1) ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor="#1a1a2e")
-        fig.suptitle("Overall Statistics", fontsize=16, fontweight=700,
-                     color="#ffffff", y=0.96)
-        gs = GridSpec(2, 3, figure=fig, hspace=0.35, wspace=0.3)
-
-        all_pass_items = [
-            ("Total Passes (AVG)", f"{stats_all['total_p90']:.1f}"),
-            ("% Accuracy", f"{stats_all['accuracy_pct']:.1f}%"),
-            ("Advanced Passes (AVG)", f"{stats_all['advanced_passes_p90']:.1f}"),
-            ("% Advanced Accuracy", f"{stats_all['advanced_accuracy_pct']:.1f}%"),
-            ("Pass Impact Value (AVG)", f"{stats_all['xt_p90']:.3f}"),
-            ("% Positive Impact", f"{stats_all['pos_pct']:.1f}%"),
-        ]
-        for idx, (label, val) in enumerate(all_pass_items):
-            row, col = divmod(idx, 3)
-            ax = fig.add_subplot(gs[row, col])
-            ax.set_facecolor("#252540")
-            ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True); spine.set_color("#444466"); spine.set_linewidth(0.8)
-            ax.text(0.5, 0.65, val, ha="center", va="center", fontsize=20,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.25, label, ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
-
-        pdf.savefig(fig, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig)
-
-        # ── PAGE 3: PASS MAPS OVERVIEW ──
-        fig_map = plt.figure(figsize=(11, 7), facecolor="#1a1a2e")
-        fig_map.suptitle("Passes — All Matches", fontsize=16, fontweight=700,
-                         color="#ffffff", y=0.97)
-        gs_map = GridSpec(2, 3, figure=fig_map, hspace=0.3, wspace=0.2,
-                          height_ratios=[1.8, 1])
-        ax1 = fig_map.add_subplot(gs_map[0, 0])
-        ax2 = fig_map.add_subplot(gs_map[0, 1])
-        ax3 = fig_map.add_subplot(gs_map[0, 2])
-        img_pm, fig_pm = draw_pass_map(all_pass_df)
-        ax1.imshow(img_pm); ax1.axis("off"); ax1.set_title("Pass Map", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        img_hm, fig_hm = draw_corridor_heatmap(all_pass_df)
-        ax2.imshow(img_hm); ax2.axis("off"); ax2.set_title("Zone Heatmap (Destination)", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        img_xt, fig_xt = draw_top_xt_map(all_pass_df, top_n=10)
-        ax3.imshow(img_xt); ax3.axis("off"); ax3.set_title("Top 10 Pass Impact", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        plt.close(fig_pm); plt.close(fig_hm); plt.close(fig_xt)
-        for idx in range(3):
-            ax = fig_map.add_subplot(gs_map[1, idx])
-            ax.set_facecolor("#252540"); ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True); spine.set_color("#444466"); spine.set_linewidth(0.8)
-            label, val = all_pass_items[idx * 2], all_pass_items[idx * 2 + 1]
-            ax.text(0.5, 0.70, val[1], ha="center", va="center", fontsize=18,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.30, val[0], ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
-        pdf.savefig(fig_map, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig_map)
-
-        # ── PAGE 4: DEFENSIVE OVERVIEW ──
-        fig_def = plt.figure(figsize=(11, 7), facecolor="#1a1a2e")
-        fig_def.suptitle("Defensive Actions — All Matches", fontsize=16, fontweight=700,
-                         color="#ffffff", y=0.97)
-        gs_def = GridSpec(2, 3, figure=fig_def, hspace=0.3, wspace=0.2,
-                          height_ratios=[1.8, 1])
-        axd1 = fig_def.add_subplot(gs_def[0, 0])
-        axd2 = fig_def.add_subplot(gs_def[0, 1])
-        axd3 = fig_def.add_subplot(gs_def[0, 2])
-        img_def_map, fig_dm = draw_defensive_map(all_def_df)
-        axd1.imshow(img_def_map); axd1.axis("off"); axd1.set_title("Defensive Actions Map", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        img_def_hm, fig_dhm = draw_defensive_heatmap(all_def_df)
-        axd2.imshow(img_def_hm); axd2.axis("off"); axd2.set_title("Defensive Heatmap", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        img_fun, fig_fun = draw_funnel_protection_map(all_def_df)
-        axd3.imshow(img_fun); axd3.axis("off"); axd3.set_title("Funnel Protection", color="#ffffff", fontsize=10, fontweight=600, pad=4)
-        plt.close(fig_dm); plt.close(fig_dhm); plt.close(fig_fun)
-        def_items_all = [
-            ("Defensive Actions (AVG)", f"{def_stats['total_actions_p90']:.1f}"),
-            ("Actions in Opp. Field (AVG)", f"{def_stats['actions_attacking_p90']:.1f}"),
-            ("Defensive Duels (AVG)", f"{def_stats['duels_p90']:.1f}"),
-            ("% Duels Won", f"{def_stats['duels_won_pct']:.1f}%"),
-            ("Interceptions (AVG)", f"{def_stats['interceptions_p90']:.1f}"),
-            ("Interceptions in Opp Field (AVG)", f"{def_stats['interceptions_attacking_p90']:.1f}"),
-        ]
-        for idx in range(3):
-            ax = fig_def.add_subplot(gs_def[1, idx])
-            ax.set_facecolor("#252540"); ax.axis("off")
-            for spine in ax.spines.values():
-                spine.set_visible(True); spine.set_color("#444466"); spine.set_linewidth(0.8)
-            label, val = def_items_all[idx * 2], def_items_all[idx * 2 + 1]
-            ax.text(0.5, 0.70, val[1], ha="center", va="center", fontsize=18,
-                    fontweight=700, color="#ffffff", transform=ax.transAxes)
-            ax.text(0.5, 0.30, val[0], ha="center", va="center", fontsize=9,
-                    fontweight=500, color="#eeeeff", transform=ax.transAxes)
-        pdf.savefig(fig_def, facecolor="#1a1a2e", bbox_inches="tight")
-        plt.close(fig_def)
-
-        # ── PER-MATCH MINI REPORTS ──
+        _make_cover_page(pdf)
+        _make_stats_page(pdf)
+        _make_passes_maps_page(pdf)
+        _make_defensive_maps_page(pdf)
+        # Per-match reports
         match_names = list(dfs_by_match.keys())
         for m_name in match_names:
-            df_m = dfs_by_match[m_name]
-            s_m = compute_stats(df_m, m_name)
-
-            fig_m = plt.figure(figsize=(11, 8), facecolor="#1a1a2e")
-            fig_m.suptitle(f"Match: {m_name}", fontsize=14, fontweight=700,
-                           color="#ffffff", y=0.97)
-
-            gs_m = GridSpec(2, 3, figure=fig_m, hspace=0.35, wspace=0.25,
-                            height_ratios=[1.6, 1])
-
-            # Row 0: Maps
-            ax_m1 = fig_m.add_subplot(gs_m[0, 0])
-            ax_m2 = fig_m.add_subplot(gs_m[0, 1])
-            ax_m3 = fig_m.add_subplot(gs_m[0, 2])
-
-            m_img_pm, m_fig_pm = draw_pass_map(df_m)
-            ax_m1.imshow(m_img_pm); ax_m1.axis("off"); ax_m1.set_title("Pass Map", color="#ffffff", fontsize=9, fontweight=600, pad=3)
-
-            if len(df_m[df_m["is_won"]]) > 0:
-                m_img_hm, m_fig_hm = draw_corridor_heatmap(df_m)
-                ax_m2.imshow(m_img_hm); ax_m2.axis("off"); ax_m2.set_title("Zone Heatmap (Destination)", color="#ffffff", fontsize=9, fontweight=600, pad=3)
-                plt.close(m_fig_hm)
-            else:
-                ax_m2.axis("off"); ax_m2.text(0.5, 0.5, "No data", ha="center", va="center", color="#8888aa", transform=ax_m2.transAxes)
-
-            m_img_xt, m_fig_xt = draw_top_xt_map(df_m, top_n=5)
-            ax_m3.imshow(m_img_xt); ax_m3.axis("off"); ax_m3.set_title("Top 5 Pass Impact", color="#ffffff", fontsize=9, fontweight=600, pad=3)
-            plt.close(m_fig_pm); plt.close(m_fig_xt)
-
-            # Row 1: Match stats
-            match_stat_items = [
-                ("Total Passes (AVG)", f"{s_m['total_p90']:.1f}"),
-                ("% Accuracy", f"{s_m['accuracy_pct']:.1f}%"),
-                ("Advanced Passes (AVG)", f"{s_m['advanced_passes_p90']:.1f}"),
-                ("% Advanced Accuracy", f"{s_m['advanced_accuracy_pct']:.1f}%"),
-                ("Pass Impact Value (AVG)", f"{s_m['xt_p90']:.3f}"),
-                ("% Positive Impact", f"{s_m['pos_pct']:.1f}%"),
-            ]
-            for idx in range(3):
-                ax = fig_m.add_subplot(gs_m[1, idx])
-                ax.set_facecolor("#252540"); ax.axis("off")
-                for spine in ax.spines.values():
-                    spine.set_visible(True); spine.set_color("#444466"); spine.set_linewidth(0.8)
-                label, val = match_stat_items[idx * 2], match_stat_items[idx * 2 + 1]
-                ax.text(0.5, 0.70, val[1], ha="center", va="center", fontsize=18,
-                        fontweight=700, color="#ffffff", transform=ax.transAxes)
-                ax.text(0.5, 0.30, val[0], ha="center", va="center", fontsize=8,
-                        fontweight=500, color="#eeeeff", transform=ax.transAxes)
-
-            pdf.savefig(fig_m, facecolor="#1a1a2e", bbox_inches="tight")
-            plt.close(fig_m)
-
+            _make_match_mini_report(pdf, m_name)
     buf.seek(0)
     return buf
 
