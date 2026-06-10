@@ -1092,7 +1092,7 @@ def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
     fig = plt.figure(figsize=(11, 8.5), facecolor="#0f0f23")
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
-    # Background gradient effect
+    # Background
     ax_bg = fig.add_axes([0, 0, 1, 1], zorder=0)
     ax_bg.set_facecolor("#0f0f23")
     ax_bg.axis("off")
@@ -1107,7 +1107,7 @@ def _make_cover_page(pdf, img_path="Captura de tela 2026-06-02 154425.png"):
     ax_title.axis("off")
     ax_title.text(0.5, 0.85, "PERFORMANCE REPORT", ha="center", va="center",
                   fontsize=32, fontweight=800, color="#ffffff",
-                  transform=ax_title.transAxes, letter_spacing=8)
+                  transform=ax_title.transAxes)
     ax_title.text(0.5, 0.45, "Hudson Cicala", ha="center", va="center",
                   fontsize=24, fontweight=600, color="#5b9bd5",
                   transform=ax_title.transAxes)
@@ -1155,7 +1155,7 @@ def _make_stats_page(pdf):
     fig.suptitle("Season Overview", fontsize=20, fontweight=700,
                  color="#ffffff", y=0.96)
 
-    # ── Section 1: Passing Stats ──
+    # Section 1: Passing Stats
     ax_section1 = fig.add_axes([0.06, 0.81, 0.88, 0.02], zorder=0)
     ax_section1.axis("off")
     ax_section1.text(0, 0.5, "PASSING STATS", ha="left", va="center",
@@ -1193,7 +1193,7 @@ def _make_stats_page(pdf):
     ax_sep.plot([0, 1], [0.5, 0.5], color="#3a3a5c", linewidth=0.5,
                 transform=ax_sep.transAxes)
 
-    # ── Section 2: Defensive Stats ──
+    # Section 2: Defensive Stats
     ax_section2 = fig.add_axes([0.06, 0.48, 0.88, 0.02], zorder=0)
     ax_section2.axis("off")
     ax_section2.text(0, 0.5, "DEFENSIVE STATS", ha="left", va="center",
@@ -1387,7 +1387,6 @@ def export_complete_report_pdf():
         _make_stats_page(pdf)
         _make_passes_maps_page(pdf)
         _make_defensive_maps_page(pdf)
-        # Per-match reports
         match_names = list(dfs_by_match.keys())
         for m_name in match_names:
             _make_match_mini_report(pdf, m_name)
