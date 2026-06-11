@@ -6,3 +6,4 @@ numpy
 Pillow
 python-docx
 plotly
+mplcursors
