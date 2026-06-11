@@ -16,6 +16,12 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 
+try:
+    import mplcursors
+    MPLCURSORS_AVAILABLE = True
+except ImportError:
+    MPLCURSORS_AVAILABLE = False
+
 # PAGE CONFIG
 st.set_page_config(layout="wide", page_title="Hudson Cicala — Dashboard")
 
@@ -951,6 +957,16 @@ def draw_top_xt_map(df, top_n=5):
         for _, row in top_passes.iterrows():
             val = float(row["delta_xt_adj"]); color = CMAP_TOP10(NORM_TOP10(np.clip(val,0.05,0.40)))
             _draw_comet_arrow(ax,float(row["x_start"]),float(row["y_start"]),float(row["x_end"]),float(row["y_end"]),color)
+        if MPLCURSORS_AVAILABLE:
+            pts = ax.scatter(top_passes["x_end"], top_passes["y_end"], s=20, alpha=0, picker=True, zorder=0)
+            cursor = mplcursors.cursor(pts, hover=True)
+            @cursor.connect("add")
+            def _(sel):
+                idx = sel.index
+                r = top_passes.iloc[idx]
+                sel.annotation.set_text(f"{r['match']}\nImpact: {r['delta_xt_adj']:.3f}")
+                sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#5b9bd5", alpha=0.9)
+                sel.annotation.arrow_patch.set(alpha=0)
     sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10,norm=NORM_TOP10)
     cbar=fig.colorbar(sm,ax=ax,fraction=0.020,pad=0.02,shrink=0.60); cbar.set_label("Pass Impact",color="#ffffff",fontsize=8)
     cbar.ax.yaxis.set_tick_params(color="#ffffff",labelsize=7); plt.setp(plt.getp(cbar.ax.axes,"yticklabels"),color="#ffffff")
@@ -979,11 +995,25 @@ def draw_funnel_protection_map(df):
     fig, ax, pitch = _base_pitch()
     funnel_rect=Rectangle((0,PENALTY_AREA_Y_MIN),FUNNEL_X_EXTEND,PENALTY_AREA_Y_MAX-PENALTY_AREA_Y_MIN,facecolor="#ffd700",edgecolor="#ffd700",lw=1.5,linestyle="--",alpha=0.12,zorder=2)
     ax.add_patch(funnel_rect)
+    funnel_actions = []
     for _, row in df.iterrows():
         x,y=float(row["x"]),float(row["y"]); in_funnel=bool(row.get("in_funnel",is_in_funnel_zone(x,y)))
-        if in_funnel: marker,s,color,edge="*",120,"#ffd700","#b8860b"
+        if in_funnel:
+            marker,s,color,edge="*",120,"#ffd700","#b8860b"
+            funnel_actions.append(row)
         else: marker,s,color,edge="o",60,"#888888","#555555"
         pitch.scatter(x,y,s=s,marker=marker,color=color,edgecolors=edge,linewidths=0.5,ax=ax,zorder=6,alpha=0.85)
+    if funnel_actions and MPLCURSORS_AVAILABLE:
+        fdf = pd.DataFrame(funnel_actions)
+        pts = ax.scatter(fdf["x"], fdf["y"], s=20, alpha=0, picker=True, zorder=0)
+        cursor = mplcursors.cursor(pts, hover=True)
+        @cursor.connect("add")
+        def _(sel):
+            idx = sel.index
+            r = fdf.iloc[idx]
+            sel.annotation.set_text(f"Match: {r['match']}\nType: {r['type']}")
+            sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#ffd700", alpha=0.9)
+            sel.annotation.arrow_patch.set(alpha=0)
     leg=ax.legend(handles=[
         Line2D([0],[0],marker="*",color="w",markerfacecolor="#ffd700",markersize=9,label="Funnel Action",alpha=0.95),
         Line2D([0],[0],marker="o",color="w",markerfacecolor="#888888",markersize=6,label="Other Action",alpha=0.50)
@@ -1101,7 +1131,7 @@ with tab_dash:
         img_pm_game, fig_pm_game = draw_pass_map(df_game); plt.close(fig_pm_game)
         img_ht_game, fig_ht_game = draw_corridor_heatmap(df_game); plt.close(fig_ht_game)
         top_n_xt = 10 if force_avg else 5
-        img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt); plt.close(fig_xt_game)
+        img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt)
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
@@ -1113,7 +1143,7 @@ with tab_dash:
         with col_m3:
             label="Top 10" if force_avg else "Top 5"
             st.markdown(f'<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">{label} Pass Impact</p>', unsafe_allow_html=True)
-            st.image(img_xt_game,use_container_width=True)
+            st.pyplot(fig_xt_game,use_container_width=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
@@ -1212,7 +1242,7 @@ with tab_dash:
 
         img_def_map,fig_def_map=draw_defensive_map(df_def_game); plt.close(fig_def_map)
         img_def_hm,fig_def_hm=draw_defensive_heatmap(df_def_game); plt.close(fig_def_hm)
-        img_funnel,fig_funnel=draw_funnel_protection_map(df_def_game); plt.close(fig_funnel)
+        img_funnel,fig_funnel=draw_funnel_protection_map(df_def_game)
 
         col_dm1,col_dm2,col_dm3=st.columns(3)
         with col_dm1:
@@ -1223,7 +1253,7 @@ with tab_dash:
             st.image(img_def_hm,use_container_width=True)
         with col_dm3:
             st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Funnel Protection Actions</p>', unsafe_allow_html=True)
-            st.image(img_funnel,use_container_width=True)
+            st.pyplot(fig_funnel,use_container_width=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
