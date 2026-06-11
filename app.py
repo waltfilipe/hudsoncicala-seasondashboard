@@ -29,7 +29,14 @@ except Exception:
 # STYLE
 st.markdown("""
 <style>
-    /* ... CSS styles ... */
+.stApp { background-color: #0f0f1a; }
+.stTabs [data-baseweb="tab-list"] { gap: 24px; }
+.stTabs [data-baseweb="tab-list"] button { font-size: 14px; color: #cccccc; }
+.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #ffffff; font-weight: 600; }
+.stSelectbox label, .stRadio label { color: #cccccc !important; font-size: 13px; }
+.stSelectbox div[data-baseweb="select"] > div { background-color: #1a1a2e; border: 1px solid #333355; color: #ffffff; }
+.stSelectbox svg { fill: #ffffff; }
+div[data-testid="stMarkdownContainer"] { color: #e0e0e0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,7 +147,7 @@ def xt_value(x, y):
 def is_in_funnel_zone(x, y):
     return x <= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN <= y <= PENALTY_AREA_Y_MAX
 
-# BASE PASSES
+# ===================== BASE PASSES DATA =====================
 BASE_MATCHES_DATA = {
     "Connecticut United (03-27)": [
         ("PASS WON", 26.75, 68.34, 8.97, 51.05, None),
@@ -270,7 +277,7 @@ BASE_MATCHES_DATA = {
     ],
 }
 
-# DEFENSIVE ACTIONS
+# ===================== DEFENSIVE ACTIONS DATA =====================
 DEFENSIVE_MATCHES_DATA = {
     "Michigan Wolves (02-20)": [
         ("DUEL_WON", 53.85, 25.21),
@@ -489,7 +496,7 @@ DEFENSIVE_MATCHES_DATA = {
     ],
 }
 
-# HELPERS
+# ===================== HELPERS =====================
 def apply_date_mapping(name: str) -> str:
     mapping = {
         "Connecticut United": "Connecticut United (03-27)",
@@ -561,7 +568,7 @@ def parse_docx_events(raw_text: str) -> dict:
         m_arrow = re_arrow.match(ln)
         if m_arrow and current_match and current_state:
             x1, y1, x2, y2 = map(float, m_arrow.groups())
-            matches[current_match].append(("PASS WON" if current_state == "PASS WON" else "PASS LOST", x1, y1, x2, y2, None))
+            matches[current_match].append((current_state, x1, y1, x2, y2, None))
     return {k: v for k, v in matches.items() if len(v) > 0}
 
 def load_docx_matches(docx_filename="Passes - Hudson Cicala.docx") -> dict:
@@ -571,7 +578,7 @@ def load_docx_matches(docx_filename="Passes - Hudson Cicala.docx") -> dict:
     txt = read_docx_text(p)
     return parse_docx_events(txt)
 
-# DATA LOADING
+# ===================== DATA LOADING =====================
 docx_matches_data = {}
 try:
     docx_matches_data = load_docx_matches()
@@ -640,7 +647,7 @@ for match_name, events in DEFENSIVE_MATCHES_DATA.items():
     df_def["in_funnel"] = df_def.apply(lambda r: is_in_funnel_zone(r["x"], r["y"]), axis=1)
     defensive_dfs_by_match[match_name] = df_def
 
-# STATS
+# ===================== STATS =====================
 def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     total = len(df)
     mins = get_match_minutes(match_name)
@@ -791,7 +798,7 @@ def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
         "funnel_success_pct": round(funnel_success_pct, 1),
     }
 
-# UI HELPERS
+# ===================== UI HELPERS =====================
 def _safe_pct_diff(a: float, b: float) -> float:
     base = max(abs(b), 1.0)
     pct = (abs(a - b) / base) * 100.0
@@ -862,7 +869,7 @@ def cmp_section_card(title, border_color, items):
     html += '</div></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-# DRAW HELPERS (PITCH)
+# ===================== DRAW HELPERS (PITCH) =====================
 def _base_pitch(bg="#1a1a2e"):
     pitch = Pitch(pitch_type="statsbomb", pitch_color=bg, line_color="#ffffff", line_alpha=0.95)
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
@@ -977,10 +984,10 @@ def draw_top_xt_map(df, top_n=5):
     _attack_arrow(fig,has_cbar=True)
     return _save_fig(fig), fig
 
-# DEFENSIVE PITCH DRAW HELPERS
-COLOR_DUEL_WON="#10b981"
-COLOR_DUEL_LOST="#E07070"
-COLOR_INTERCEPTION="#2F80ED"
+# ===================== DEFENSIVE PITCH DRAW HELPERS =====================
+COLOR_DUEL_WON = "#10b981"
+COLOR_DUEL_LOST = "#E07070"
+COLOR_INTERCEPTION = "#2F80ED"
 
 def draw_defensive_map(df):
     fig, ax, pitch = _base_pitch()
@@ -1071,7 +1078,7 @@ def draw_defensive_heatmap(df):
     _attack_arrow(fig)
     return _save_fig(fig), fig
 
-# SIDEBAR
+# ===================== SIDEBAR =====================
 st.sidebar.markdown("""
 <div style="text-align:center;padding:8px 0;">
     <div style="font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">Pass Stats Dashboard</div>
@@ -1092,12 +1099,13 @@ st.sidebar.markdown("""
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
 
-# LAYOUT — SINGLE TAB
+# ===================== LAYOUT — SINGLE TAB =====================
 tab_dash, = st.tabs(["Detailed Dashboard"])
 
 with tab_dash:
     sub_tab_passes, sub_tab_def, sub_tab_xt, sub_tab_funnel = st.tabs(["Passes", "Defensive Actions", "xT passes", "Funnel Actions"])
 
+    # ===== PASSES SUBTAB =====
     with sub_tab_passes:
         st.markdown("### Match Filters")
         col_f1, col_f2 = st.columns(2)
@@ -1217,6 +1225,7 @@ with tab_dash:
                             'Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>'
                             '% Positive Impact — Passes that generated a positive impact based on where they ended on the field.</div>', unsafe_allow_html=True)
 
+    # ===== DEFENSIVE ACTIONS SUBTAB =====
     with sub_tab_def:
         st.markdown("### Match Filter")
         col_df1, col_df2 = st.columns(2)
@@ -1314,34 +1323,52 @@ with tab_dash:
                     ("%FPA Successful",d_game["funnel_success_pct"],d_avg["funnel_success_pct"],f"{d_game['funnel_success_pct']:.1f}%",f"{d_avg['funnel_success_pct']:.1f}%")
                 ])
 
-    # ========== NEW SUBTAB 3: xT passes ==========
+    # ===== XT PASSES SUBTAB (clicável) =====
     with sub_tab_xt:
         st.markdown("### Ranking de xT dos Passes")
         xt_records = []
         for match_name, df_match in dfs_by_match.items():
             successful = df_match[(df_match["is_won"]) & (df_match["delta_xt_adj"] > 0)]
-            for _, row in successful.iterrows():
+            for idx, row in successful.iterrows():
                 xt_records.append({
                     "delta_xt": float(row["delta_xt_adj"]),
-                    "match": match_name
+                    "match": match_name,
+                    "_orig_idx": idx
                 })
         if xt_records:
-            df_xt = pd.DataFrame(xt_records)
-            df_xt = df_xt.sort_values("delta_xt", ascending=False).reset_index(drop=True)
-            df_xt.index += 1
-            df_xt.index.name = "#"
+            df_xt_full = pd.DataFrame(xt_records)
+            df_xt_full = df_xt_full.sort_values("delta_xt", ascending=False).reset_index(drop=True)
+            df_xt_display = df_xt_full[["delta_xt", "match"]].copy()
+            df_xt_display.index = range(1, len(df_xt_display) + 1)
+            df_xt_display.index.name = "#"
             st.dataframe(
-                df_xt,
+                df_xt_display,
                 column_config={
                     "delta_xt": st.column_config.NumberColumn("Δ xT", format="%.4f"),
                     "match": "Partida"
                 },
-                use_container_width=True
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="xt_ranking"
             )
+            if "xt_ranking" in st.session_state and st.session_state["xt_ranking"]["selection"]["rows"]:
+                sel_idx = st.session_state["xt_ranking"]["selection"]["rows"][0]
+                sel_row = df_xt_full.iloc[sel_idx]
+                match_name = sel_row["match"]
+                orig_idx = sel_row["_orig_idx"]
+                pass_df = dfs_by_match[match_name].loc[[orig_idx]]
+                st.markdown(
+                    f"**Passe selecionado** — {match_name} "
+                    f"| Δ xT: {sel_row['delta_xt']:.4f}"
+                )
+                img, fig = draw_pass_map(pass_df)
+                plt.close(fig)
+                st.image(img, use_container_width=True)
         else:
             st.info("Nenhum passe com impacto de xT encontrado.")
 
-    # ========== NEW SUBTAB 4: Funnel Actions ==========
+    # ===== FUNNEL ACTIONS SUBTAB (clicável) =====
     with sub_tab_funnel:
         st.markdown("### Ações no Funil — xT Evitados")
         funnel_records = []
@@ -1350,27 +1377,45 @@ with tab_dash:
                 df_match["in_funnel"] &
                 (df_match["is_duel_won"] | df_match["is_interception"])
             ]
-            for _, row in funnel_df.iterrows():
+            for idx, row in funnel_df.iterrows():
                 xt_avoided = xt_value(float(row["x"]), float(row["y"]))
                 action_label = "Duelo Vencido" if row["is_duel_won"] else "Interceptação"
                 funnel_records.append({
                     "xT evitado": round(xt_avoided, 4),
                     "Ação": action_label,
-                    "Partida": match_name
+                    "Partida": match_name,
+                    "_orig_idx": idx
                 })
         if funnel_records:
-            df_funnel = pd.DataFrame(funnel_records)
-            df_funnel = df_funnel.sort_values("xT evitado", ascending=False).reset_index(drop=True)
-            df_funnel.index += 1
-            df_funnel.index.name = "#"
+            df_funnel_full = pd.DataFrame(funnel_records)
+            df_funnel_full = df_funnel_full.sort_values("xT evitado", ascending=False).reset_index(drop=True)
+            df_funnel_display = df_funnel_full[["xT evitado", "Ação", "Partida"]].copy()
+            df_funnel_display.index = range(1, len(df_funnel_display) + 1)
+            df_funnel_display.index.name = "#"
             st.dataframe(
-                df_funnel[["xT evitado", "Ação", "Partida"]],
+                df_funnel_display,
                 column_config={
                     "xT evitado": st.column_config.NumberColumn("xT Evitado", format="%.4f"),
                     "Ação": "Tipo",
                     "Partida": "Partida"
                 },
-                use_container_width=True
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="funnel_ranking"
             )
+            if "funnel_ranking" in st.session_state and st.session_state["funnel_ranking"]["selection"]["rows"]:
+                sel_idx = st.session_state["funnel_ranking"]["selection"]["rows"][0]
+                sel_row = df_funnel_full.iloc[sel_idx]
+                match_name = sel_row["Partida"]
+                orig_idx = sel_row["_orig_idx"]
+                action_df = defensive_dfs_by_match[match_name].iloc[[orig_idx]]
+                st.markdown(
+                    f"**Ação selecionada** — {match_name} "
+                    f"| xT Evitado: {sel_row['xT evitado']:.4f}"
+                )
+                img, fig = draw_defensive_map(action_df)
+                plt.close(fig)
+                st.image(img, use_container_width=True)
         else:
             st.info("Nenhuma ação defensiva no funil encontrada.")
