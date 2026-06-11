@@ -1122,7 +1122,7 @@ with tab_dash:
 
         if force_avg:
             with col_s1:
-                section_card("📋 Pass Overview",C_BLUE_PASTEL,[
+                section_card("📋 Overview",C_BLUE_PASTEL,[
                     ("Total Passes (AVG)",f"{s_game['total_p90']:.1f}"),
                     ("% Accuracy",f"{s_game['accuracy_pct']:.1f}%")
                 ])
@@ -1146,7 +1146,7 @@ with tab_dash:
                             unsafe_allow_html=True)
         else:
             with col_s1:
-                cmp_section_card("📋 Pass Overview",C_BLUE_PASTEL,[
+                cmp_section_card("📋 Overview",C_BLUE_PASTEL,[
                     ("Total Passes (AVG)",s_game["total_p90"],f"{s_avg['total_p90']:.1f}"),
                     ("% Accuracy",s_game["accuracy_pct"],s_avg["accuracy_pct"],f"{s_game['accuracy_pct']:.1f}%",f"{s_avg['accuracy_pct']:.1f}%")
                 ])
@@ -1231,12 +1231,12 @@ with tab_dash:
 
         if force_avg_def:
             with col_ds1:
-                section_card("🛡️ General",C_BLUE_PASTEL,[
+                section_card("📋 Overview",C_BLUE_PASTEL,[
                     ("Defensive Actions (AVG)",f"{d_game['total_actions_p90']:.1f}"),
                     ("Actions in Own Half (AVG)",f"{d_game['actions_own_p90']:.1f}")
                 ])
             with col_ds2:
-                section_card("⚔️ Duels and Interceptions",C_GREEN_PASTEL,[
+                section_card("⚔️ Duels",C_GREEN_PASTEL,[
                     ("Defensive Duels (AVG)",f"{d_game['duels_p90']:.1f}"),
                     ("% Duels Won",f"{d_game['duels_won_pct']:.1f}%"),
                     ("Interceptions (AVG)",f"{d_game['interceptions_p90']:.1f}")
@@ -1248,7 +1248,7 @@ with tab_dash:
                 ])
         else:
             with col_ds1:
-                cmp_section_card("🛡️ General",C_BLUE_PASTEL,[
+                cmp_section_card("📋 Overview",C_BLUE_PASTEL,[
                     ("Defensive Actions (AVG)",d_game["total_actions_p90"],f"{d_avg['total_actions_p90']:.1f}"),
                     ("Actions in Own Half (AVG)",d_game["actions_own_p90"],f"{d_avg['actions_own_p90']:.1f}")
                 ])
