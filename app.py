@@ -15,8 +15,6 @@ from PIL import Image
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
 from matplotlib.colors import Normalize, LinearSegmentedColormap
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.gridspec import GridSpec
 
 # PAGE CONFIG
 st.set_page_config(layout="wide", page_title="Hudson Cicala — Dashboard")
@@ -75,11 +73,6 @@ PENALTY_AREA_X = 18.0
 FUNNEL_X_EXTEND = 33.0
 PENALTY_AREA_Y_MIN = 18.0
 PENALTY_AREA_Y_MAX = 62.0
-# PDF STYLE CONSTANTS
-PDF_BG = "#0d0d1f"
-PDF_TEXT_WHITE = "#ffffff"
-PDF_TEXT_LIGHT = "#d0d0e8"
-PDF_TEXT_DIM = "#5a5a7a"
 
 def _hex_to_rgba(hex_color, alpha=1.0):
     if hex_color.startswith('#'):
@@ -874,52 +867,6 @@ def cmp_section_card(title, border_color, items):
     html+='</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-# PDF EXPORT FUNCTION
-def _pdf_add_footer(fig, page_num, total_pages):
-    ax = fig.add_axes([0.06, 0.01, 0.88, 0.025], zorder=999)
-    ax.axis("off")
-    ax.text(0, 0.5, "Hudson Cicala — 2026 Season", ha="left", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
-    ax.text(1, 0.5, f"{page_num}/{total_pages}", ha="right", va="center", fontsize=7, color=PDF_TEXT_DIM, transform=ax.transAxes)
-    ax.plot([0, 1], [1, 1], color="#3a3a5c", linewidth=0.4, transform=ax.transAxes)
-
-def export_dashboard_pdf(passes_images, def_images):
-    """Generate a 2-page PDF with passes and defensive screenshots"""
-    total_pages = 2
-    buf = BytesIO()
-    with PdfPages(buf) as pdf:
-        # ── PAGE 1: PASSES ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle("Passes Analysis", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
-        labels_p = ["Pass Map", "Zone Heatmap (Destination)", "Top 10 Pass Impact"]
-        for i, img in enumerate(passes_images):
-            left = 0.03 + i * 0.33
-            width = 0.31
-            ax_img = fig.add_axes([left, 0.12, width, 0.78])
-            ax_img.imshow(img)
-            ax_img.axis("off")
-            ax_img.text(0.5, 1.01, labels_p[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
-        _pdf_add_footer(fig, 1, total_pages)
-        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
-        plt.close(fig)
-
-        # ── PAGE 2: DEFENSIVE ──
-        fig = plt.figure(figsize=(11, 8.5), facecolor=PDF_BG)
-        fig.suptitle("Defensive Actions", fontsize=20, fontweight=700, color=PDF_TEXT_WHITE, y=0.97, x=0.06, ha="left")
-        labels_d = ["Defensive Actions Map", "Defensive Heatmap", "Funnel Protection Actions"]
-        for i, img in enumerate(def_images):
-            left = 0.03 + i * 0.33
-            width = 0.31
-            ax_img = fig.add_axes([left, 0.12, width, 0.78])
-            ax_img.imshow(img)
-            ax_img.axis("off")
-            ax_img.text(0.5, 1.01, labels_d[i], ha="center", va="bottom", fontsize=9, fontweight=600, color=PDF_TEXT_LIGHT, transform=ax_img.transAxes)
-        _pdf_add_footer(fig, 2, total_pages)
-        pdf.savefig(fig, facecolor=PDF_BG, bbox_inches="tight")
-        plt.close(fig)
-
-    buf.seek(0)
-    return buf
-
 # DRAW HELPERS (PITCH)
 def _base_pitch(bg="#1a1a2e"):
     pitch = Pitch(pitch_type="statsbomb", pitch_color=bg, line_color="#ffffff", line_alpha=0.95)
@@ -1058,7 +1005,7 @@ def draw_defensive_heatmap(df):
         duel_pct=(duels_won/total_duels*100) if total_duels>0 else None
         corridor_data[cname]={"total":val,"duels_won":duels_won,"duels_lost":duels_lost,"duel_pct":duel_pct}
     all_vals=[corridor_data[c]["total"] for c in corridors]; vmax=max(1,max(all_vals))
-    cmap=LinearSegmentedColormap.from_list("def_cm_blue",["#0a1428","#1a3058","#2a5a8a","#3a8ad0","#6ab0f5"],N=20)
+    cmap=LinearSegmentedColormap.from_list("def_cm_blue",["#6ab0f5","#3a8ad0","#2a5a8a","#1a3058","#0a1428"],N=20)
     norm=Normalize(vmin=0,vmax=max(vmax,1)); threshold=max(1,vmax*0.40)
     fig,ax,pitch=_base_pitch()
     for cname,(y0,y1) in corridors.items():
@@ -1158,18 +1105,15 @@ with tab_dash:
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
-            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">📍 Pass Map</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Pass Map</p>', unsafe_allow_html=True)
             st.image(img_pm_game,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_m2:
-            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">📊 Zone Heatmap (Destination)</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Zone Heatmap (Destination)</p>', unsafe_allow_html=True)
             st.image(img_ht_game,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_m3:
             label="Top 10" if force_avg else "Top 5"
-            st.markdown(f'<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">⚡ {label} Pass Impact</p>', unsafe_allow_html=True)
+            st.markdown(f'<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">{label} Pass Impact</p>', unsafe_allow_html=True)
             st.image(img_xt_game,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
@@ -1272,17 +1216,14 @@ with tab_dash:
 
         col_dm1,col_dm2,col_dm3=st.columns(3)
         with col_dm1:
-            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🛡️ Defensive Actions Map</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Defensive Actions Map</p>', unsafe_allow_html=True)
             st.image(img_def_map,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_dm2:
-            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🔥 Defensive Heatmap</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Defensive Heatmap</p>', unsafe_allow_html=True)
             st.image(img_def_hm,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_dm3:
-            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🎯 Funnel Protection Actions</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Funnel Protection Actions</p>', unsafe_allow_html=True)
             st.image(img_funnel,use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
@@ -1322,32 +1263,3 @@ with tab_dash:
                     ("Funnel Protection Actions (AVG)",d_game["funnel_actions_p90"],f"{d_avg['funnel_actions_p90']:.1f}"),
                     ("%FPA Successful",d_game["funnel_success_pct"],d_avg["funnel_success_pct"],f"{d_game['funnel_success_pct']:.1f}%",f"{d_avg['funnel_success_pct']:.1f}%")
                 ])
-
-    # ── PDF EXPORT SECTION ──
-    st.markdown("---")
-    st.markdown("### 📄 Export Complete Dashboard")
-
-    if st.button("📸 Download Screenshot (PDF) — Passes + Defensive Actions", use_container_width=True):
-        with st.spinner("Generating PDF with dashboard screenshots..."):
-            df_all_passes = pd.concat(dfs_by_match.values(), ignore_index=True)
-            df_all_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
-
-            img_pm_all, _ = draw_pass_map(df_all_passes); plt.close()
-            img_ht_all, _ = draw_corridor_heatmap(df_all_passes); plt.close()
-            img_xt_all, _ = draw_top_xt_map(df_all_passes, top_n=10); plt.close()
-            img_dm_all, _ = draw_defensive_map(df_all_def); plt.close()
-            img_dhm_all, _ = draw_defensive_heatmap(df_all_def); plt.close()
-            img_fn_all, _ = draw_funnel_protection_map(df_all_def); plt.close()
-
-            pdf_bytes = export_dashboard_pdf(
-                [img_pm_all, img_ht_all, img_xt_all],
-                [img_dm_all, img_dhm_all, img_fn_all]
-            )
-
-            st.download_button(
-                "📥 Save PDF",
-                data=pdf_bytes,
-                file_name="hudson_cicala_dashboard.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
