@@ -1058,7 +1058,7 @@ def draw_defensive_heatmap(df):
         duel_pct=(duels_won/total_duels*100) if total_duels>0 else None
         corridor_data[cname]={"total":val,"duels_won":duels_won,"duels_lost":duels_lost,"duel_pct":duel_pct}
     all_vals=[corridor_data[c]["total"] for c in corridors]; vmax=max(1,max(all_vals))
-    cmap=LinearSegmentedColormap.from_list("def_cm",["#1a1a2e","#2F80ED","#10b981"],N=20)
+    cmap=LinearSegmentedColormap.from_list("def_cm_blue",["#0a1428","#1a3058","#2a5a8a","#3a8ad0","#6ab0f5"],N=20)
     norm=Normalize(vmin=0,vmax=max(vmax,1)); threshold=max(1,vmax*0.40)
     fig,ax,pitch=_base_pitch()
     for cname,(y0,y1) in corridors.items():
@@ -1158,16 +1158,16 @@ with tab_dash:
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
-            st.markdown('<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">📍 Pass Map</p>', unsafe_allow_html=True)
+            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">📍 Pass Map</p>', unsafe_allow_html=True)
             st.image(img_pm_game,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with col_m2:
-            st.markdown('<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">📊 Zone Heatmap (Destination)</p>', unsafe_allow_html=True)
+            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">📊 Zone Heatmap (Destination)</p>', unsafe_allow_html=True)
             st.image(img_ht_game,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with col_m3:
             label="Top 10" if force_avg else "Top 5"
-            st.markdown(f'<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">⚡ {label} Pass Impact</p>', unsafe_allow_html=True)
+            st.markdown(f'<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">⚡ {label} Pass Impact</p>', unsafe_allow_html=True)
             st.image(img_xt_game,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1189,16 +1189,16 @@ with tab_dash:
                 ])
             with col_s3:
                 section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value per Game (AVG)",f"{s_game['xt_p90']:.1f}",f"Total (All Games): {total_impact_value:.1f}"),
-                    ("% Positive Impact (All Games)",f"{s_game['pos_pct']:.1f}%")
+                    ("Pass Impact Value (AVG)",f"{s_game['xt_p90']:.1f}",f"Total: {total_impact_value:.3f}"),
+                    ("% Positive Impact",f"{s_game['pos_pct']:.1f}%")
                 ])
             col_s3_exp=st.columns(3)[2]
             with col_s3_exp:
                 expl_bg=_hex_to_rgba(C_AMBER_PASTEL,0.35); expl_bd=_hex_to_rgba(C_AMBER_PASTEL,0.20)
                 st.markdown(f'<div style="background:{expl_bg};border:1px solid {expl_bd};border-radius:8px;padding:8px 12px;margin-top:-8px;">'
                             '<p style="font-size:11px;color:#ccccdd;margin:0;"><strong style="color:#ffdd99;">Explanation</strong><br>'
-                            'Calculation used to measure the cumulative offensive value generated through passing.<br>'
-                            '% of passes that generated a positive impact based on where they ended on the field.</p></div>',
+                            'Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>'
+                            '% Positive Impact — Passes that generated a positive impact based on where they ended on the field.</p></div>',
                             unsafe_allow_html=True)
         else:
             with col_s1:
@@ -1272,15 +1272,15 @@ with tab_dash:
 
         col_dm1,col_dm2,col_dm3=st.columns(3)
         with col_dm1:
-            st.markdown('<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">🛡️ Defensive Actions Map</p>', unsafe_allow_html=True)
+            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🛡️ Defensive Actions Map</p>', unsafe_allow_html=True)
             st.image(img_def_map,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with col_dm2:
-            st.markdown('<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">🔥 Defensive Heatmap</p>', unsafe_allow_html=True)
+            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🔥 Defensive Heatmap</p>', unsafe_allow_html=True)
             st.image(img_def_hm,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         with col_dm3:
-            st.markdown('<div class="card-viz"><p style="font-weight:600;font-size:14px;color:#f0f0ff;margin-bottom:6px;">🎯 Funnel Protection Actions</p>', unsafe_allow_html=True)
+            st.markdown('<div class="card-viz"><p style="font-weight:700;font-size:15px;color:#ffffff;margin-bottom:8px;letter-spacing:0.5px;border-bottom:2px solid rgba(91,155,213,0.3);padding-bottom:6px;">🎯 Funnel Protection Actions</p>', unsafe_allow_html=True)
             st.image(img_funnel,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
