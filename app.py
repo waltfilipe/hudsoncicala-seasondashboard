@@ -17,10 +17,11 @@ from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 
 try:
-    import mplcursors
-    MPLCURSORS_AVAILABLE = True
+    import mpld3
+    from mpld3 import plugins
+    MPLD3_AVAILABLE = True
 except ImportError:
-    MPLCURSORS_AVAILABLE = False
+    MPLD3_AVAILABLE = False
 
 # PAGE CONFIG
 st.set_page_config(layout="wide", page_title="Hudson Cicala — Dashboard")
@@ -953,24 +954,32 @@ def _draw_comet_arrow(ax, x0, y0, x1, y1, color):
 def draw_top_xt_map(df, top_n=5):
     fig, ax, pitch = _base_pitch()
     top_passes = (df[(df["is_won"])&(df["delta_xt_adj"]>0)].sort_values("delta_xt_adj",ascending=False).head(top_n).copy().reset_index(drop=True))
+
+    interactive_html = None
+    tooltip_labels = []
+    tooltip_xs = []
+    tooltip_ys = []
+
     if not top_passes.empty:
         for _, row in top_passes.iterrows():
-            val = float(row["delta_xt_adj"]); color = CMAP_TOP10(NORM_TOP10(np.clip(val,0.05,0.40)))
+            val = float(row["delta_xt_adj"])
+            color = CMAP_TOP10(NORM_TOP10(np.clip(val,0.05,0.40)))
             _draw_comet_arrow(ax,float(row["x_start"]),float(row["y_start"]),float(row["x_end"]),float(row["y_end"]),color)
-        if MPLCURSORS_AVAILABLE:
-            pts = ax.scatter(top_passes["x_end"], top_passes["y_end"], s=20, alpha=0, picker=True, zorder=0)
-            cursor = mplcursors.cursor(pts, hover=True)
-            @cursor.connect("add")
-            def _(sel):
-                idx = sel.index
-                r = top_passes.iloc[idx]
-                sel.annotation.set_text(f"{r['match']}\nImpact: {r['delta_xt_adj']:.3f}")
-                sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#5b9bd5", alpha=0.9)
-                sel.annotation.arrow_patch.set(alpha=0)
+            match_name = row.get("match", "Unknown")
+            tooltip_labels.append(f"Match: {match_name}\nPass Impact: {val:.3f}")
+            tooltip_xs.append(float(row["x_start"]))
+            tooltip_ys.append(float(row["y_start"]))
+
+    if MPLD3_AVAILABLE and len(tooltip_xs) > 0:
+        scatter_tt = ax.scatter(tooltip_xs, tooltip_ys, s=40, alpha=0.0, zorder=10)
+        tooltip = plugins.PointLabelTooltip(scatter_tt, labels=tooltip_labels)
+        plugins.connect(fig, tooltip)
+        interactive_html = mpld3.fig_to_html(fig)
+
     sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10,norm=NORM_TOP10)
     cbar=fig.colorbar(sm,ax=ax,fraction=0.020,pad=0.02,shrink=0.60); cbar.set_label("Pass Impact",color="#ffffff",fontsize=8)
     cbar.ax.yaxis.set_tick_params(color="#ffffff",labelsize=7); plt.setp(plt.getp(cbar.ax.axes,"yticklabels"),color="#ffffff")
-    _attack_arrow(fig,has_cbar=True); return _save_fig(fig), fig
+    _attack_arrow(fig,has_cbar=True); return _save_fig(fig), fig, interactive_html
 
 # DEFENSIVE PITCH DRAW HELPERS
 COLOR_DUEL_WON="#10b981"; COLOR_DUEL_LOST="#E07070"; COLOR_INTERCEPTION="#2F80ED"
@@ -995,32 +1004,37 @@ def draw_funnel_protection_map(df):
     fig, ax, pitch = _base_pitch()
     funnel_rect=Rectangle((0,PENALTY_AREA_Y_MIN),FUNNEL_X_EXTEND,PENALTY_AREA_Y_MAX-PENALTY_AREA_Y_MIN,facecolor="#ffd700",edgecolor="#ffd700",lw=1.5,linestyle="--",alpha=0.12,zorder=2)
     ax.add_patch(funnel_rect)
-    funnel_actions = []
+
+    interactive_html = None
+    funnel_labels = []
+    funnel_xs = []
+    funnel_ys = []
+
     for _, row in df.iterrows():
         x,y=float(row["x"]),float(row["y"]); in_funnel=bool(row.get("in_funnel",is_in_funnel_zone(x,y)))
         if in_funnel:
             marker,s,color,edge="*",120,"#ffd700","#b8860b"
-            funnel_actions.append(row)
-        else: marker,s,color,edge="o",60,"#888888","#555555"
+            match_name = row.get("match", "Unknown")
+            funnel_labels.append(f"Match: {match_name}")
+            funnel_xs.append(x)
+            funnel_ys.append(y)
+        else:
+            marker,s,color,edge="o",60,"#888888","#555555"
         pitch.scatter(x,y,s=s,marker=marker,color=color,edgecolors=edge,linewidths=0.5,ax=ax,zorder=6,alpha=0.85)
-    if funnel_actions and MPLCURSORS_AVAILABLE:
-        fdf = pd.DataFrame(funnel_actions)
-        pts = ax.scatter(fdf["x"], fdf["y"], s=20, alpha=0, picker=True, zorder=0)
-        cursor = mplcursors.cursor(pts, hover=True)
-        @cursor.connect("add")
-        def _(sel):
-            idx = sel.index
-            r = fdf.iloc[idx]
-            sel.annotation.set_text(f"Match: {r['match']}\nType: {r['type']}")
-            sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#ffd700", alpha=0.9)
-            sel.annotation.arrow_patch.set(alpha=0)
+
+    if MPLD3_AVAILABLE and len(funnel_xs) > 0:
+        scatter_tt = ax.scatter(funnel_xs, funnel_ys, s=40, alpha=0.0, zorder=10)
+        tooltip = plugins.PointLabelTooltip(scatter_tt, labels=funnel_labels)
+        plugins.connect(fig, tooltip)
+        interactive_html = mpld3.fig_to_html(fig)
+
     leg=ax.legend(handles=[
         Line2D([0],[0],marker="*",color="w",markerfacecolor="#ffd700",markersize=9,label="Funnel Action",alpha=0.95),
         Line2D([0],[0],marker="o",color="w",markerfacecolor="#888888",markersize=6,label="Other Action",alpha=0.50)
     ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,labelspacing=0.35,borderpad=0.4)
     for t in leg.get_texts(): t.set_color("white")
     leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
-    return _save_fig(fig), fig
+    return _save_fig(fig), fig, interactive_html
 
 def draw_defensive_heatmap(df):
     corridors={"Right":(LANE_LEFT_MIN,FIELD_Y),"Center":(LANE_RIGHT_MAX,LANE_LEFT_MIN),"Left":(0.0,LANE_RIGHT_MAX)}
@@ -1131,7 +1145,7 @@ with tab_dash:
         img_pm_game, fig_pm_game = draw_pass_map(df_game); plt.close(fig_pm_game)
         img_ht_game, fig_ht_game = draw_corridor_heatmap(df_game); plt.close(fig_ht_game)
         top_n_xt = 10 if force_avg else 5
-        img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt)
+        img_xt_game, fig_xt_game, xt_html = draw_top_xt_map(df_game, top_n=top_n_xt); plt.close(fig_xt_game)
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
@@ -1143,7 +1157,10 @@ with tab_dash:
         with col_m3:
             label="Top 10" if force_avg else "Top 5"
             st.markdown(f'<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">{label} Pass Impact</p>', unsafe_allow_html=True)
-            st.pyplot(fig_xt_game,use_container_width=True)
+            if xt_html and MPLD3_AVAILABLE:
+                st.components.v1.html(xt_html, height=530)
+            else:
+                st.image(img_xt_game,use_container_width=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
@@ -1242,7 +1259,7 @@ with tab_dash:
 
         img_def_map,fig_def_map=draw_defensive_map(df_def_game); plt.close(fig_def_map)
         img_def_hm,fig_def_hm=draw_defensive_heatmap(df_def_game); plt.close(fig_def_hm)
-        img_funnel,fig_funnel=draw_funnel_protection_map(df_def_game)
+        img_funnel,fig_funnel, funnel_html = draw_funnel_protection_map(df_def_game); plt.close(fig_funnel)
 
         col_dm1,col_dm2,col_dm3=st.columns(3)
         with col_dm1:
@@ -1253,7 +1270,10 @@ with tab_dash:
             st.image(img_def_hm,use_container_width=True)
         with col_dm3:
             st.markdown('<p style="font-weight:700;font-size:16px;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">Funnel Protection Actions</p>', unsafe_allow_html=True)
-            st.pyplot(fig_funnel,use_container_width=True)
+            if funnel_html and MPLD3_AVAILABLE:
+                st.components.v1.html(funnel_html, height=530)
+            else:
+                st.image(img_funnel,use_container_width=True)
 
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
