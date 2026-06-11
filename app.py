@@ -1189,7 +1189,7 @@ with tab_dash:
                 ])
             with col_s3:
                 section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value per Game(AVG)",f"{s_game['xt_p90']:.1f}",f"Total (All Games): {total_impact_value:.1f}"),
+                    ("Pass Impact Value per Game (AVG)",f"{s_game['xt_p90']:.1f}",f"Total (All Games): {total_impact_value:.1f}"),
                     ("% Positive Impact (All Games)",f"{s_game['pos_pct']:.1f}%")
                 ])
             col_s3_exp=st.columns(3)[2]
@@ -1197,8 +1197,8 @@ with tab_dash:
                 expl_bg=_hex_to_rgba(C_AMBER_PASTEL,0.35); expl_bd=_hex_to_rgba(C_AMBER_PASTEL,0.20)
                 st.markdown(f'<div style="background:{expl_bg};border:1px solid {expl_bd};border-radius:8px;padding:8px 12px;margin-top:-8px;">'
                             '<p style="font-size:11px;color:#ccccdd;margin:0;"><strong style="color:#ffdd99;">Explanation</strong><br>'
-                            'Pass Impact Value — Calculation used to evaluate the offensive value added by a pass.<br>'
-                            '% Positive Impact — Passes that generated a positive impact based on where they ended on the field.</p></div>',
+                            'Calculation used to measure the cumulative offensive value generated through passing.<br>'
+                            '% of passes that generated a positive impact based on where they ended on the field.</p></div>',
                             unsafe_allow_html=True)
         else:
             with col_s1:
