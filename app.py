@@ -1189,8 +1189,8 @@ with tab_dash:
                 ])
             with col_s3:
                 section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value (AVG)",f"{s_game['xt_p90']:.1f}",f"Total: {total_impact_value:.3f}"),
-                    ("% Positive Impact",f"{s_game['pos_pct']:.1f}%")
+                    ("Pass Impact Value per Game(AVG)",f"{s_game['xt_p90']:.1f}",f"Total (All Games): {total_impact_value:.1f}"),
+                    ("% Positive Impact (All Games)",f"{s_game['pos_pct']:.1f}%")
                 ])
             col_s3_exp=st.columns(3)[2]
             with col_s3_exp:
