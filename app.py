@@ -87,7 +87,7 @@ C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
 PASS_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
-DEF_TONES = ["#86efac", "#22c55e", "#15803d"]
+DEF_TONES = ["#fde68a", "#fbbf24", "#eab308"]
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
 NX_XT, NY_XT = 16, 12
@@ -818,6 +818,15 @@ def _target_progress(val: float, target: float) -> float:
         return 100.0 if val >= 0 else 0.0
     return float(np.clip((val / target) * 100.0, 0.0, 130.0))
 
+def _kpi_status(val: float, target: float) -> tuple:
+    """Return (status_key, label, color) — hit, close, or miss vs target."""
+    pct = _target_progress(val, target)
+    if val >= target:
+        return "hit", "Target Hit", "#22c55e"
+    if pct >= 85.0:
+        return "close", "Close to Target", "#f59e0b"
+    return "miss", "Below Target", "#ef4444"
+
 def _target_card_shell(title, border_color, body_html):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
@@ -929,10 +938,110 @@ def _target_card_style_c(title, border_color, items):
         body += '</div></div></div>'
     _target_card_shell(title, border_color, body)
 
+def _target_card_style_d(title, border_color, items):
+    """KPI badge — traffic-light status (Hit / Close / Miss) with value vs target."""
+    r, g, b = _accent_rgb(border_color)
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        status_key, status_label, status_color = _kpi_status(val, target)
+        pct = min(_target_progress(val, target), 100.0)
+        icon = "✓" if status_key == "hit" else "~" if status_key == "close" else "✗"
+        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
+        body += f'<div style="{sep}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += '<div style="display:flex;align-items:center;gap:12px">'
+        body += (f'<div style="flex-shrink:0;width:52px;height:52px;border-radius:12px;'
+                 f'background:rgba({int(status_color[1:3],16)},{int(status_color[3:5],16)},{int(status_color[5:7],16)},0.18);'
+                 f'border:2px solid {status_color};display:flex;align-items:center;justify-content:center;'
+                 f'font-size:22px;font-weight:800;color:{status_color}">{icon}</div>')
+        body += '<div style="flex:1;min-width:0">'
+        body += (f'<div style="font-size:24px;font-weight:800;color:#ffffff;line-height:1.1">{disp_val}'
+                 f'<span style="font-size:12px;font-weight:600;color:#64748b;margin-left:8px">/ {disp_tgt}</span></div>')
+        body += (f'<div style="margin-top:4px"><span style="color:{status_color};font-size:11px;font-weight:700">'
+                 f'{status_label}</span>'
+                 f'<span style="color:#64748b;font-size:10px;margin-left:8px">{pct:.0f}% of target</span></div>')
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:3px">{extra}</div>'
+        body += '</div></div></div>'
+    _target_card_shell(title, border_color, body)
+
+def _target_card_style_e(title, border_color, items):
+    """Bullet chart — value bar with target marker and zone coloring."""
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgb({r},{g},{b})"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        pct = _target_progress(val, target)
+        bar_pct = min(pct, 100.0)
+        _, status_label, status_color = _kpi_status(val, target)
+        max_scale = max(target * 1.15, val, target, 0.01)
+        target_pos = min((target / max_scale) * 100.0, 100.0)
+        bar_color = "#22c55e" if val >= target else "#f59e0b" if pct >= 85 else accent
+        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
+        body += f'<div style="{sep}">'
+        body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+        body += f'<span style="font-size:12px;font-weight:600;color:#c7cdda">{label}</span>'
+        body += f'<span style="font-size:10px;font-weight:700;color:{status_color};background:rgba(255,255,255,0.06);border-radius:999px;padding:2px 8px">{status_label}</span>'
+        body += '</div>'
+        body += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
+        body += f'<span style="font-size:22px;font-weight:800;color:#ffffff">{disp_val}</span>'
+        body += f'<span style="font-size:11px;color:#8b93a7">Target <b style="color:#eef1f7">{disp_tgt}</b></span>'
+        body += '</div>'
+        body += '<div style="position:relative;height:14px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
+        body += (f'<div style="position:absolute;top:0;left:0;height:100%;width:{bar_pct:.1f}%;'
+                 f'background:{bar_color};border-radius:999px;opacity:0.90"></div>')
+        body += (f'<div style="position:absolute;top:-3px;left:{target_pos:.1f}%;width:3px;height:20px;'
+                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,0.5)"></div>')
+        body += '</div>'
+        body += f'<div style="margin-top:5px">{_target_delta_html(val, target)}</div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:3px;text-align:right">{extra}</div>'
+        body += '</div>'
+    _target_card_shell(title, border_color, body)
+
+def _target_card_style_f(title, border_color, items):
+    """Scorecard — compact KPI tiles with hit/close/miss border glow."""
+    r, g, b = _accent_rgb(border_color)
+    body = '<div style="display:flex;flex-direction:column;gap:10px">'
+    for item in items:
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        status_key, status_label, status_color = _kpi_status(val, target)
+        pct = min(_target_progress(val, target), 100.0)
+        glow = f"0 0 12px {status_color}55"
+        body += (f'<div style="background:rgba(0,0,0,0.25);border:1px solid {status_color};'
+                 f'border-radius:12px;padding:12px 14px;box-shadow:{glow}">')
+        body += '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        body += f'<div style="font-size:11px;font-weight:600;color:#c7cdda;max-width:55%">{label}</div>'
+        body += (f'<div style="text-align:right"><div style="font-size:9px;font-weight:700;letter-spacing:0.8px;'
+                 f'color:{status_color};text-transform:uppercase">{status_label}</div>'
+                 f'<div style="font-size:10px;color:#64748b;margin-top:2px">{pct:.0f}%</div></div>')
+        body += '</div>'
+        body += '<div style="display:flex;align-items:baseline;gap:10px;margin-top:8px">'
+        body += f'<span style="font-size:28px;font-weight:800;color:#ffffff;line-height:1">{disp_val}</span>'
+        body += (f'<span style="font-size:12px;color:#8b93a7">target <b style="color:{status_color}">{disp_tgt}</b></span>')
+        body += '</div>'
+        body += f'<div style="margin-top:6px">{_target_delta_html(val, target)}</div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px">{extra}</div>'
+        body += '</div>'
+    body += '</div>'
+    _target_card_shell(title, border_color, body)
+
 TARGET_CARD_STYLES = {
     "A — Progress Bar": _target_card_style_a,
     "B — Side by Side": _target_card_style_b,
     "C — Gauge Pill": _target_card_style_c,
+    "D — KPI Badge": _target_card_style_d,
+    "E — Bullet Chart": _target_card_style_e,
+    "F — Scorecard": _target_card_style_f,
 }
 
 def target_section_card(title, border_color, items, style_key):
@@ -1280,10 +1389,9 @@ def generate_season_pdf():
             ("Defensive Actions (AVG)", f"{d_def['total_actions_p90']:.1f}"),
             ("Actions in Own Half (AVG)", f"{d_def['actions_own_p90']:.1f}"),
         ]),
-        ("Duels & Interceptions", [
+        ("Duels", [
             ("Defensive Duels (AVG)", f"{d_def['duels_p90']:.1f}"),
             ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%"),
-            ("Interceptions (AVG)", f"{d_def['interceptions_p90']:.1f}"),
         ]),
         ("Funnel Protection", [
             ("Funnel Protection Actions (AVG)", f"{d_def['funnel_actions_p90']:.1f}"),
@@ -1354,7 +1462,7 @@ CARD_STYLE = st.sidebar.radio(
     "Choose visual layout",
     options=list(TARGET_CARD_STYLES.keys()),
     index=0,
-    help="Compare 3 designs showing Hudson's value vs target for each metric.",
+    help="Compare 6 designs showing Hudson's value vs target for each metric.",
 )
 
 num_matches = len(dfs_by_match)
@@ -1557,13 +1665,11 @@ with tab_dash:
                  f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
             ], CARD_STYLE)
         with col_ds2:
-            target_section_card("Duels & Interceptions", DEF_TONES[1], [
+            target_section_card("Duels", DEF_TONES[1], [
                 ("Defensive Duels (AVG)", d_game["duels_p90"], T["duels_p90"],
                  f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
                 ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
                  f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
-                ("Interceptions (AVG)", d_game["interceptions_p90"], T["interceptions_p90"],
-                 f"{d_game['interceptions_p90']:.1f}", f"{T['interceptions_p90']:.1f}"),
             ], CARD_STYLE)
         with col_ds3:
             target_section_card("Funnel Protection", DEF_TONES[2], [
