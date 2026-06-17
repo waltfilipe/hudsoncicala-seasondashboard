@@ -12,15 +12,28 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, Rectangle, FancyBboxPatch
+from matplotlib.patches import FancyArrowPatch, Rectangle
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 import mplcursors
 
-# ── SESSION STATE ──────────────────────────────────────────────
-if "selected_xt_idx" not in st.session_state:
-    st.session_state.selected_xt_idx = None
-if "selected_funnel_idx" not in st.session_state:
-    st.session_state.selected_funnel_idx = None
+# PDF
+PDF_AVAILABLE = True
+try:
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        Image as RLImage,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+except Exception:
+    PDF_AVAILABLE = False
 
 # PAGE CONFIG
 st.set_page_config(layout="wide", page_title="Hudson Cicala — Dashboard")
@@ -35,7 +48,19 @@ except Exception:
 # STYLE
 st.markdown("""
 <style>
-    /* dark theme refinements */
+    .block-container { padding-top: 1.5rem; }
+    div[data-testid="stMetric"] {
+        background: linear-gradient(145deg, rgba(30,30,46,0.9), rgba(20,20,32,0.95));
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 12px 16px;
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 8px 20px;
+        font-weight: 600;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,6 +86,8 @@ C_PURPLE_LIGHT = "#a78bfa"
 C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
+PASS_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
+DEF_TONES = ["#86efac", "#22c55e", "#15803d"]
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
 NX_XT, NY_XT = 16, 12
@@ -761,51 +788,67 @@ def _arrow_html(val_game: float, val_avg: float) -> str:
         pct = _safe_pct_diff(val_avg, val_game)
         return f' <span style="color:#E07070">▼ -{pct:.0f}%</span>'
 
-def section_card(title, border_color, items):
-    bg = _hex_to_rgba(border_color, 0.55)
-    bd = _hex_to_rgba(border_color, 0.30)
-    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:16px;margin-bottom:12px">'
-    html += f'<div style="font-size:14px;font-weight:700;color:{border_color};margin-bottom:10px">{title}</div>'
-    html += f'<div>'
+def _accent_rgb(border_color):
+    h = border_color.lstrip('#')
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+def _modern_card(title, border_color, items, comparison=False):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgb({r},{g},{b})"
+    grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.18) 0%, "
+            f"rgba(24,24,38,0.55) 55%, rgba(16,16,26,0.82) 100%)")
+    html = (f'<div style="position:relative;background:{grad};'
+            f'border:1px solid rgba({r},{g},{b},0.35);border-radius:16px;'
+            f'padding:18px 20px 14px 20px;margin-bottom:12px;'
+            f'box-shadow:0 10px 28px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06);'
+            f'overflow:hidden">')
+    html += (f'<div style="position:absolute;top:0;left:0;height:3px;width:100%;'
+             f'background:linear-gradient(90deg, rgba({r},{g},{b},0.95), rgba({r},{g},{b},0.10))"></div>')
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+    html += (f'<span style="width:8px;height:8px;border-radius:50%;background:{accent};'
+             f'box-shadow:0 0 10px rgba({r},{g},{b},0.85)"></span>')
+    html += (f'<span style="font-size:12px;font-weight:700;letter-spacing:1.1px;'
+             f'text-transform:uppercase;color:#eef1f7">{title}</span>')
+    html += '</div>'
     for idx, item in enumerate(items):
-        label = item[0]; value = item[1]; sub = item[2] if len(item) > 2 else ""; tooltip = item[3] if len(item) > 3 else ""
-        is_last = idx == len(items) - 1
-        sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
-        html += f'<div {sep}>'
-        if tooltip:
-            label_html = f'{label} <span style="cursor:help;font-size:11px;color:#888" title="{tooltip}">?</span>'
-            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#cccccc">{label_html}</span><span style="font-size:15px;font-weight:700;color:#ffffff">{value}</span></div>'
+        if comparison:
+            val_game, val_avg = item[1], item[2]
+            value_html = item[3] if len(item) > 3 else str(val_game)
+            disp_avg = item[4] if len(item) > 4 else str(val_avg)
+            tooltip = item[5] if len(item) > 5 else ""
+            extra = item[6] if len(item) > 6 else ""
+            arrow = _arrow_html(float(val_game), float(val_avg))
+            sub_lines = [f"AVG {disp_avg}"]
+            if extra:
+                sub_lines.append(extra)
         else:
-            html += f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#cccccc">{label}</span><span style="font-size:15px;font-weight:700;color:#ffffff">{value}</span></div>'
-        if sub:
-            html += f'<div style="font-size:11px;color:#888888;margin-top:2px">{sub}</div>'
+            value_html = item[1]
+            tooltip = item[3] if len(item) > 3 else ""
+            arrow = ""
+            sub_lines = [item[2]] if len(item) > 2 and item[2] else []
+        label = item[0]
+        is_last = idx == len(items) - 1
+        row_style = "" if is_last else ("margin-bottom:12px;padding-bottom:12px;"
+                                        "border-bottom:1px solid rgba(255,255,255,0.07)")
+        title_attr = f' title="{tooltip}"' if tooltip else ""
+        cursor = "cursor:help;" if tooltip else ""
+        html += f'<div style="{row_style}">'
+        html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">'
+        html += (f'<span style="font-size:13px;font-weight:600;color:#c7cdda;{cursor}"{title_attr}>{label}</span>')
+        html += (f'<span style="font-size:22px;font-weight:800;color:#ffffff;line-height:1.1;'
+                 f'white-space:nowrap">{value_html}{arrow}</span>')
         html += '</div>'
-    html += '</div></div>'
+        for sl in sub_lines:
+            html += f'<div style="text-align:right;font-size:11px;color:#8b93a7;margin-top:3px">{sl}</div>'
+        html += '</div>'
+    html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
+def section_card(title, border_color, items):
+    _modern_card(title, border_color, items, comparison=False)
+
 def cmp_section_card(title, border_color, items):
-    bg = _hex_to_rgba(border_color, 0.55); bd = _hex_to_rgba(border_color, 0.30)
-    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:16px;margin-bottom:12px">'
-    html += f'<div style="font-size:14px;font-weight:700;color:{border_color};margin-bottom:10px">{title}</div>'
-    for idx, item in enumerate(items):
-        label=item[0]; val_game=item[1]; val_avg=item[2]
-        disp_game=item[3] if len(item)>3 else str(val_game)
-        disp_avg=item[4] if len(item)>4 else str(val_avg)
-        tooltip=item[5] if len(item)>5 else ""
-        sub=item[6] if len(item)>6 else ""
-        is_last=idx==len(items)-1; sep="" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
-        html+=f'<div {sep}>'
-        if tooltip:
-            label_html=f'{label} <span style="cursor:help;font-size:11px;color:#888" title="{tooltip}">?</span>'
-            html+=f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#cccccc">{label_html}</span><span style="font-size:15px;font-weight:700;color:#ffffff">{disp_game}{_arrow_html(float(val_game),float(val_avg))}</span></div>'
-        else:
-            html+=f'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:#cccccc">{label}</span><span style="font-size:15px;font-weight:700;color:#ffffff">{disp_game}{_arrow_html(float(val_game),float(val_avg))}</span></div>'
-        html+=f'<div style="font-size:11px;color:#888888;margin-top:2px">AVG: {disp_avg}</div>'
-        if sub:
-            html+=f'<div style="font-size:11px;color:#888888;margin-top:2px">{sub}</div>'
-        html+='</div>'
-    html+='</div></div>'
-    st.markdown(html, unsafe_allow_html=True)
+    _modern_card(title, border_color, items, comparison=True)
 
 # ── DRAW HELPERS (PITCH) ───────────────────────────────────────
 def _base_pitch(bg="#1a1a2e"):
@@ -911,26 +954,6 @@ def draw_top_xt_map(df, top_n=5):
     cbar.ax.yaxis.set_tick_params(color="#ffffff",labelsize=7); plt.setp(plt.getp(cbar.ax.axes,"yticklabels"),color="#ffffff")
     _attack_arrow(fig,has_cbar=True); return _save_fig(fig), fig
 
-# ── NEW: single-pass highlight map for interactive table ───────
-def draw_single_pass_map(pass_row):
-    """Draw a pitch with a single pass highlighted (comet arrow + label)."""
-    fig, ax, pitch = _base_pitch()
-    val = float(pass_row["delta_xt_adj"])
-    color = CMAP_TOP10(NORM_TOP10(np.clip(val, 0.05, 0.40)))
-    _draw_comet_arrow(ax, float(pass_row["x_start"]), float(pass_row["y_start"]),
-                      float(pass_row["x_end"]), float(pass_row["y_end"]), color)
-    match_name = str(pass_row.get("match", ""))
-    label = f"xT: {val:.3f}  |  Match: {match_name[:25]}"
-    ax.text(FIELD_X / 2, 2, label, ha="center", va="bottom", fontsize=7.5, color="#ffffff",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="#1a1a2e", edgecolor=color, alpha=0.90))
-    sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10, norm=NORM_TOP10)
-    cbar = fig.colorbar(sm, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
-    cbar.set_label("Pass Impact", color="#ffffff", fontsize=8)
-    cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
-    plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
-    _attack_arrow(fig, has_cbar=True)
-    return fig
-
 # ── DEFENSIVE PITCH DRAW HELPERS ───────────────────────────────
 COLOR_DUEL_WON="#10b981"; COLOR_DUEL_LOST="#E07070"; COLOR_INTERCEPTION="#2F80ED"
 
@@ -985,34 +1008,6 @@ def draw_funnel_protection_map(df):
     leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
     return _save_fig(fig), fig
 
-# ── NEW: single-action highlight map for interactive funnel table ──
-def draw_single_funnel_action_map(action_row):
-    """Draw a pitch highlighting a single defensive action."""
-    fig, ax, pitch = _base_pitch()
-    funnel_rect = Rectangle((0, PENALTY_AREA_Y_MIN), FUNNEL_X_EXTEND, PENALTY_AREA_Y_MAX - PENALTY_AREA_Y_MIN,
-                            facecolor="#ffd700", edgecolor="#ffd700", lw=1.5, linestyle="--", alpha=0.08, zorder=2)
-    ax.add_patch(funnel_rect)
-    x, y = float(action_row["x"]), float(action_row["y"])
-    action_type = str(action_row["type"])
-    match_name = str(action_row.get("match", ""))
-    in_funnel = bool(action_row.get("in_funnel", is_in_funnel_zone(x, y)))
-
-    if action_type == "DUEL_WON":
-        color, marker, s = "#10b981", "o", 200
-    elif action_type == "DUEL_LOST":
-        color, marker, s = "#E07070", "X", 220
-    else:
-        color, marker, s = "#2F80ED", "^", 180
-
-    pitch.scatter(x, y, s=s, marker=marker, color=color, edgecolors="white", linewidths=1.5, ax=ax, zorder=7, alpha=1.0)
-    # Label below pitch
-    zone = "🟡 Funnel Action" if in_funnel else "⚪ Other Zone"
-    label = f"{action_type}  |  {zone}  |  Match: {match_name[:25]}"
-    ax.text(FIELD_X / 2, 2, label, ha="center", va="bottom", fontsize=7.5, color="#ffffff",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="#1a1a2e", edgecolor=color, alpha=0.90))
-    _attack_arrow(fig)
-    return fig
-
 def draw_defensive_heatmap(df):
     corridors={"Right":(LANE_LEFT_MIN,FIELD_Y),"Center":(LANE_RIGHT_MAX,LANE_LEFT_MIN),"Left":(0.0,LANE_RIGHT_MAX)}
     corridor_data={}
@@ -1040,6 +1035,193 @@ def draw_defensive_heatmap(df):
     ax.axhline(y=LANE_RIGHT_MAX,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
     _attack_arrow(fig); return _save_fig(fig), fig
 
+# ── PDF REPORT ─────────────────────────────────────────────────
+def _fig_to_png_bytes(fig):
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=140, facecolor=fig.get_facecolor(), bbox_inches="tight")
+    buf.seek(0)
+    return buf
+
+def _pil_to_png_bytes(pil_img):
+    buf = BytesIO()
+    pil_img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+def _pdf_stat_table(cards, accent_hex):
+    rows = []
+    for card_title, metrics in cards:
+        rows.append([card_title.upper(), ""])
+        for label, value in metrics:
+            rows.append([label, value])
+        rows.append(["", ""])
+    tbl = Table(rows, colWidths=[9.5 * cm, 5.5 * cm])
+    style_cmds = [
+        ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.HexColor("#1a1a2e")),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [rl_colors.HexColor("#f4f6fb"), rl_colors.white]),
+        ("GRID", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#dde3ef")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]
+    row_idx = 0
+    for card_title, metrics in cards:
+        style_cmds.append(("BACKGROUND", (0, row_idx), (-1, row_idx), rl_colors.HexColor(accent_hex)))
+        style_cmds.append(("TEXTCOLOR", (0, row_idx), (-1, row_idx), rl_colors.white))
+        style_cmds.append(("FONTNAME", (0, row_idx), (-1, row_idx), "Helvetica-Bold"))
+        style_cmds.append(("FONTSIZE", (0, row_idx), (-1, row_idx), 10))
+        row_idx += 1 + len(metrics) + 1
+    tbl.setStyle(TableStyle(style_cmds))
+    return tbl
+
+def generate_season_pdf():
+    if not PDF_AVAILABLE:
+        raise RuntimeError("reportlab is not installed. Run: pip install reportlab")
+
+    df_pass = pd.concat(dfs_by_match.values(), ignore_index=True)
+    df_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
+
+    pass_stats_list = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
+    s_pass = {}
+    for k in pass_stats_list[0].keys():
+        if isinstance(pass_stats_list[0][k], (int, float)):
+            s_pass[k] = sum(s[k] for s in pass_stats_list) / len(pass_stats_list)
+        else:
+            s_pass[k] = 0
+    total_impact = float(df_pass.loc[df_pass["is_won"], "delta_xt_adj"].sum())
+
+    def_all = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
+    d_def = {}
+    for k in def_all[0].keys():
+        if isinstance(def_all[0][k], (int, float)):
+            d_def[k] = sum(s[k] for s in def_all) / len(def_all)
+        else:
+            d_def[k] = 0
+
+    img_pm, fig_pm = draw_pass_map(df_pass)
+    plt.close(fig_pm)
+    img_ht, fig_ht = draw_corridor_heatmap(df_pass)
+    plt.close(fig_ht)
+    _, fig_xt = draw_top_xt_map(df_pass, top_n=10)
+    buf_xt = _fig_to_png_bytes(fig_xt)
+    plt.close(fig_xt)
+
+    img_def, fig_def = draw_defensive_map(df_def)
+    plt.close(fig_def)
+    img_dhm, fig_dhm = draw_defensive_heatmap(df_def)
+    plt.close(fig_dhm)
+    img_fun, fig_fun = draw_funnel_protection_map(df_def)
+    plt.close(fig_fun)
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=1.2 * cm, rightMargin=1.2 * cm,
+        topMargin=1.0 * cm, bottomMargin=1.0 * cm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ReportTitle", parent=styles["Heading1"],
+        fontSize=22, textColor=rl_colors.HexColor("#1a1a2e"),
+        spaceAfter=6, alignment=1,
+    )
+    section_style = ParagraphStyle(
+        "Section", parent=styles["Heading2"],
+        fontSize=14, textColor=rl_colors.HexColor(PASS_TONES[1]),
+        spaceBefore=10, spaceAfter=8,
+    )
+    sub_style = ParagraphStyle(
+        "Sub", parent=styles["Normal"],
+        fontSize=9, textColor=rl_colors.HexColor("#555566"), alignment=1,
+    )
+    map_w = 8.2 * cm
+    story = [
+        Spacer(1, 0.5 * cm),
+        Paragraph("Hudson Cicala — Season Dashboard", title_style),
+        Paragraph("2026 Season • All Matches Report", sub_style),
+        Spacer(1, 0.4 * cm),
+        Paragraph("Passing Analysis", section_style),
+    ]
+
+    pass_cards = [
+        ("Overview", [
+            ("Total Passes (AVG)", f"{s_pass['total_p90']:.1f}"),
+            ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%"),
+        ]),
+        ("Advanced", [
+            ("Advanced Passes (AVG)", f"{s_pass['advanced_passes_p90']:.1f}"),
+            ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%"),
+        ]),
+        ("Impact", [
+            ("Pass Impact Value (AVG)", f"{s_pass['xt_p90']:.1f}"),
+            ("Total Impact", f"{total_impact:.3f}"),
+            ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%"),
+        ]),
+    ]
+    story.append(_pdf_stat_table(pass_cards, PASS_TONES[0]))
+    story.append(Spacer(1, 0.3 * cm))
+
+    pass_maps = Table([
+        [Paragraph("<b>Pass Map</b>", styles["Normal"]),
+         Paragraph("<b>Zone Heatmap</b>", styles["Normal"]),
+         Paragraph("<b>Top 10 Pass Impact</b>", styles["Normal"])],
+        [RLImage(_pil_to_png_bytes(img_pm), width=map_w, height=map_w * 0.65),
+         RLImage(_pil_to_png_bytes(img_ht), width=map_w, height=map_w * 0.65),
+         RLImage(buf_xt, width=map_w, height=map_w * 0.65)],
+    ], colWidths=[map_w + 0.2 * cm] * 3)
+    pass_maps.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.extend([pass_maps, PageBreak()])
+
+    def_section = ParagraphStyle(
+        "DefSection", parent=styles["Heading2"],
+        fontSize=14, textColor=rl_colors.HexColor(DEF_TONES[1]),
+        spaceBefore=4, spaceAfter=8,
+    )
+    story.append(Paragraph("Defensive Actions", def_section))
+
+    def_cards = [
+        ("Overview", [
+            ("Defensive Actions (AVG)", f"{d_def['total_actions_p90']:.1f}"),
+            ("Actions in Own Half (AVG)", f"{d_def['actions_own_p90']:.1f}"),
+        ]),
+        ("Duels & Interceptions", [
+            ("Defensive Duels (AVG)", f"{d_def['duels_p90']:.1f}"),
+            ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%"),
+            ("Interceptions (AVG)", f"{d_def['interceptions_p90']:.1f}"),
+        ]),
+        ("Funnel Protection", [
+            ("Funnel Protection Actions (AVG)", f"{d_def['funnel_actions_p90']:.1f}"),
+            ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%"),
+        ]),
+    ]
+    story.append(_pdf_stat_table(def_cards, DEF_TONES[1]))
+    story.append(Spacer(1, 0.3 * cm))
+
+    def_maps = Table([
+        [Paragraph("<b>Defensive Actions Map</b>", styles["Normal"]),
+         Paragraph("<b>Defensive Heatmap</b>", styles["Normal"]),
+         Paragraph("<b>Funnel Protection</b>", styles["Normal"])],
+        [RLImage(_pil_to_png_bytes(img_def), width=map_w, height=map_w * 0.65),
+         RLImage(_pil_to_png_bytes(img_dhm), width=map_w, height=map_w * 0.65),
+         RLImage(_pil_to_png_bytes(img_fun), width=map_w, height=map_w * 0.65)],
+    ], colWidths=[map_w + 0.2 * cm] * 3)
+    def_maps.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(def_maps)
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
 # ── SIDEBAR ────────────────────────────────────────────────────
 st.sidebar.markdown("""
 <h2 style="color:#ffffff;font-weight:700;margin-bottom:4px">Pass Stats Dashboard</h2>
@@ -1053,6 +1235,29 @@ if os.path.exists(img_path):
 st.sidebar.markdown("""
 <p style="color:#666666;font-size:11px;margin-top:8px">Data collected from match footage</p>
 """, unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("#### Export Report")
+if not PDF_AVAILABLE:
+    st.sidebar.warning("Install reportlab to enable PDF export: `pip install reportlab`")
+else:
+    if st.sidebar.button("Generate PDF Report", type="primary", use_container_width=True):
+        with st.spinner("Building season report..."):
+            try:
+                pdf_bytes = generate_season_pdf()
+                st.session_state["pdf_report"] = pdf_bytes
+                st.sidebar.success("Report ready!")
+            except Exception as exc:
+                st.sidebar.error(f"PDF error: {exc}")
+    if "pdf_report" in st.session_state:
+        st.sidebar.download_button(
+            label="Download PDF",
+            data=st.session_state["pdf_report"],
+            file_name="Hudson_Cicala_Season_Report.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+        st.sidebar.caption("All Matches • Passes & Defensive Actions")
 
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
@@ -1133,87 +1338,45 @@ with tab_dash:
 
         st.markdown("<hr style='margin:8px 0;opacity:0.2'>", unsafe_allow_html=True)
 
-        # ── INTERACTIVE xT PASSES TABLE ──────────────────────
-        st.markdown("### Top xT Passes — Interactive Table")
-        st.markdown("Click a row to highlight that pass on the map below.")
-
-        # Build top passes data
-        top_xt_passes = (df_game[(df_game["is_won"]) & (df_game["delta_xt_adj"] > 0)]
-                         .sort_values("delta_xt_adj", ascending=False)
-                         .head(10).reset_index(drop=True))
-
-        if len(top_xt_passes) > 0:
-            xt_display = pd.DataFrame({
-                "#": range(1, len(top_xt_passes) + 1),
-                "Match": top_xt_passes["match"].str[:20],
-                "xT Value": top_xt_passes["delta_xt_adj"].round(3),
-                "From → To": top_xt_passes.apply(
-                    lambda r: f"({r['x_start']:.0f}, {r['y_start']:.0f}) → ({r['x_end']:.0f}, {r['y_end']:.0f})", axis=1),
-            })
-
-            # Use on_select for click interaction
-            sel_event = st.dataframe(
-                xt_display,
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="xt_table"
-            )
-
-            # Determine selected row index
-            if sel_event and sel_event.selection and sel_event.selection.rows:
-                st.session_state.selected_xt_idx = sel_event.selection.rows[0]
-            elif st.session_state.selected_xt_idx is None:
-                # Default to first row if nothing selected yet
-                st.session_state.selected_xt_idx = 0
-
-            sel_idx = st.session_state.selected_xt_idx
-            if sel_idx is not None and sel_idx < len(top_xt_passes):
-                selected_pass = top_xt_passes.iloc[sel_idx]
-                fig_xt_single = draw_single_pass_map(selected_pass)
-                st.pyplot(fig_xt_single, use_container_width=True)
-                plt.close(fig_xt_single)
-        else:
-            st.info("No passes with positive xT impact found for the current filter.")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
         # ── STATS CARDS ───────────────────────────────────────
         col_s1, col_s2, col_s3 = st.columns(3)
         total_impact_value = float(df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
 
         if force_avg:
             with col_s1:
-                section_card("📋 Overview",C_BLUE_PASTEL,[
-                    ("Total Passes (AVG)",f"{s_game['total_p90']:.1f}"),
-                    ("% Accuracy",f"{s_game['accuracy_pct']:.1f}%")
+                section_card("Overview", PASS_TONES[0], [
+                    ("Total Passes (AVG)", f"{s_game['total_p90']:.1f}"),
+                    ("% Accuracy", f"{s_game['accuracy_pct']:.1f}%"),
                 ])
             with col_s2:
-                section_card("📊 Advanced",C_GREEN_PASTEL,[
-                    ("Advanced Passes (AVG)",f"{s_game['advanced_passes_p90']:.1f}"),
-                    ("% Advanced Accuracy",f"{s_game['advanced_accuracy_pct']:.1f}%")
+                section_card("Advanced", PASS_TONES[1], [
+                    ("Advanced Passes (AVG)", f"{s_game['advanced_passes_p90']:.1f}"),
+                    ("% Advanced Accuracy", f"{s_game['advanced_accuracy_pct']:.1f}%"),
                 ])
             with col_s3:
-                section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value (AVG)",f"{s_game['xt_p90']:.1f}",f"Total: {total_impact_value:.3f}"),
-                    ("% Positive Impact",f"{s_game['pos_pct']:.1f}%")
+                section_card("Impact", PASS_TONES[2], [
+                    ("Pass Impact Value (AVG)", f"{s_game['xt_p90']:.1f}", f"Total: {total_impact_value:.3f}"),
+                    ("% Positive Impact", f"{s_game['pos_pct']:.1f}%"),
                 ])
         else:
             with col_s1:
-                cmp_section_card("📋 Overview",C_BLUE_PASTEL,[
-                    ("Total Passes (AVG)",s_game["total_p90"],f"{s_avg['total_p90']:.1f}"),
-                    ("% Accuracy",s_game["accuracy_pct"],s_avg["accuracy_pct"],f"{s_game['accuracy_pct']:.1f}%",f"{s_avg['accuracy_pct']:.1f}%")
+                cmp_section_card("Overview", PASS_TONES[0], [
+                    ("Total Passes (AVG)", s_game["total_p90"], f"{s_avg['total_p90']:.1f}"),
+                    ("% Accuracy", s_game["accuracy_pct"], s_avg["accuracy_pct"],
+                     f"{s_game['accuracy_pct']:.1f}%", f"{s_avg['accuracy_pct']:.1f}%"),
                 ])
             with col_s2:
-                cmp_section_card("📊 Advanced",C_GREEN_PASTEL,[
-                    ("Advanced Passes (AVG)",s_game["advanced_passes_p90"],f"{s_avg['advanced_passes_p90']:.1f}"),
-                    ("% Advanced Accuracy",s_game["advanced_accuracy_pct"],s_avg["advanced_accuracy_pct"],f"{s_game['advanced_accuracy_pct']:.1f}%",f"{s_avg['advanced_accuracy_pct']:.1f}%")
+                cmp_section_card("Advanced", PASS_TONES[1], [
+                    ("Advanced Passes (AVG)", s_game["advanced_passes_p90"], f"{s_avg['advanced_passes_p90']:.1f}"),
+                    ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], s_avg["advanced_accuracy_pct"],
+                     f"{s_game['advanced_accuracy_pct']:.1f}%", f"{s_avg['advanced_accuracy_pct']:.1f}%"),
                 ])
             with col_s3:
-                cmp_section_card("⚡ Impact",C_AMBER_PASTEL,[
-                    ("Pass Impact Value (AVG)",s_game["xt_p90"],s_avg["xt_p90"],f"{s_game['xt_p90']:.1f}",f"{s_avg['xt_p90']:.1f}","",f"Total: {total_impact_value:.3f}"),
-                    ("% Positive Impact",s_game["pos_pct"],s_avg["pos_pct"],f"{s_game['pos_pct']:.1f}%",f"{s_avg['pos_pct']:.1f}%")
+                cmp_section_card("Impact", PASS_TONES[2], [
+                    ("Pass Impact Value (AVG)", s_game["xt_p90"], s_avg["xt_p90"],
+                     f"{s_game['xt_p90']:.1f}", f"{s_avg['xt_p90']:.1f}", "", f"Total: {total_impact_value:.3f}"),
+                    ("% Positive Impact", s_game["pos_pct"], s_avg["pos_pct"],
+                     f"{s_game['pos_pct']:.1f}%", f"{s_avg['pos_pct']:.1f}%"),
                 ])
 
     # ═══════════════════════════════════════════════════════════
@@ -1278,79 +1441,42 @@ with tab_dash:
 
         st.markdown("<hr style='margin:8px 0;opacity:0.2'>", unsafe_allow_html=True)
 
-        # ── INTERACTIVE FUNNEL ACTIONS TABLE ──────────────────
-        st.markdown("### Funnel Protection Actions — Interactive Table")
-        st.markdown("Click a row to highlight that action on the map below.")
-
-        # Build funnel actions data
-        funnel_actions = df_def_game[df_def_game["in_funnel"]].copy().reset_index(drop=True)
-
-        if len(funnel_actions) > 0:
-            fun_display = pd.DataFrame({
-                "#": range(1, len(funnel_actions) + 1),
-                "Type": funnel_actions["type"],
-                "Position": funnel_actions.apply(lambda r: f"({r['x']:.0f}, {r['y']:.0f})", axis=1),
-                "Match": funnel_actions["match"].str[:20],
-            })
-
-            sel_fun_event = st.dataframe(
-                fun_display,
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="funnel_table"
-            )
-
-            if sel_fun_event and sel_fun_event.selection and sel_fun_event.selection.rows:
-                st.session_state.selected_funnel_idx = sel_fun_event.selection.rows[0]
-            elif st.session_state.selected_funnel_idx is None:
-                st.session_state.selected_funnel_idx = 0
-
-            sel_f_idx = st.session_state.selected_funnel_idx
-            if sel_f_idx is not None and sel_f_idx < len(funnel_actions):
-                selected_action = funnel_actions.iloc[sel_f_idx]
-                fig_fun_single = draw_single_funnel_action_map(selected_action)
-                st.pyplot(fig_fun_single, use_container_width=True)
-                plt.close(fig_fun_single)
-        else:
-            st.info("No funnel actions found for the current filter.")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
         # ── DEFENSIVE STATS CARDS ─────────────────────────────
         col_ds1,col_ds2,col_ds3=st.columns(3)
         if force_avg_def:
             with col_ds1:
-                section_card("📋 Overview",C_BLUE_PASTEL,[
-                    ("Defensive Actions (AVG)",f"{d_game['total_actions_p90']:.1f}"),
-                    ("Actions in Own Half (AVG)",f"{d_game['actions_own_p90']:.1f}")
+                section_card("Overview", DEF_TONES[0], [
+                    ("Defensive Actions (AVG)", f"{d_game['total_actions_p90']:.1f}"),
+                    ("Actions in Own Half (AVG)", f"{d_game['actions_own_p90']:.1f}"),
                 ])
             with col_ds2:
-                section_card("⚔️ Duels",C_GREEN_PASTEL,[
-                    ("Defensive Duels (AVG)",f"{d_game['duels_p90']:.1f}"),
-                    ("% Duels Won",f"{d_game['duels_won_pct']:.1f}%"),
-                    ("Interceptions (AVG)",f"{d_game['interceptions_p90']:.1f}")
+                section_card("Duels & Interceptions", DEF_TONES[1], [
+                    ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
+                    ("% Duels Won", f"{d_game['duels_won_pct']:.1f}%"),
+                    ("Interceptions (AVG)", f"{d_game['interceptions_p90']:.1f}"),
                 ])
             with col_ds3:
-                section_card("🛡️ Funnel Protection",C_AMBER_PASTEL,[
-                    ("Funnel Protection Actions (AVG)",f"{d_game['funnel_actions_p90']:.1f}"),
-                    ("%FPA Successful",f"{d_game['funnel_success_pct']:.1f}%")
+                section_card("Funnel Protection", DEF_TONES[2], [
+                    ("Funnel Protection Actions (AVG)", f"{d_game['funnel_actions_p90']:.1f}"),
+                    ("% FPA Successful", f"{d_game['funnel_success_pct']:.1f}%"),
                 ])
         else:
             with col_ds1:
-                cmp_section_card("📋 Overview",C_BLUE_PASTEL,[
-                    ("Defensive Actions (AVG)",d_game["total_actions_p90"],f"{d_avg['total_actions_p90']:.1f}"),
-                    ("Actions in Own Half (AVG)",d_game["actions_own_p90"],f"{d_avg['actions_own_p90']:.1f}")
+                cmp_section_card("Overview", DEF_TONES[0], [
+                    ("Defensive Actions (AVG)", d_game["total_actions_p90"], f"{d_avg['total_actions_p90']:.1f}"),
+                    ("Actions in Own Half (AVG)", d_game["actions_own_p90"], f"{d_avg['actions_own_p90']:.1f}"),
                 ])
             with col_ds2:
-                cmp_section_card("⚔️ Duels and Interceptions",C_GREEN_PASTEL,[
-                    ("Defensive Duels (AVG)",d_game["duels_p90"],f"{d_avg['duels_p90']:.1f}"),
-                    ("% Duels Won",d_game["duels_won_pct"],d_avg["duels_won_pct"],f"{d_game['duels_won_pct']:.1f}%",f"{d_avg['duels_won_pct']:.1f}%"),
-                    ("Interceptions (AVG)",d_game["interceptions_p90"],d_avg["interceptions_p90"],f"{d_game['interceptions_p90']:.1f}",f"{d_avg['interceptions_p90']:.1f}")
+                cmp_section_card("Duels & Interceptions", DEF_TONES[1], [
+                    ("Defensive Duels (AVG)", d_game["duels_p90"], f"{d_avg['duels_p90']:.1f}"),
+                    ("% Duels Won", d_game["duels_won_pct"], d_avg["duels_won_pct"],
+                     f"{d_game['duels_won_pct']:.1f}%", f"{d_avg['duels_won_pct']:.1f}%"),
+                    ("Interceptions (AVG)", d_game["interceptions_p90"], d_avg["interceptions_p90"],
+                     f"{d_game['interceptions_p90']:.1f}", f"{d_avg['interceptions_p90']:.1f}"),
                 ])
             with col_ds3:
-                cmp_section_card("🛡️ Funnel Protection",C_AMBER_PASTEL,[
-                    ("Funnel Protection Actions (AVG)",d_game["funnel_actions_p90"],f"{d_avg['funnel_actions_p90']:.1f}"),
-                    ("%FPA Successful",d_game["funnel_success_pct"],d_avg["funnel_success_pct"],f"{d_game['funnel_success_pct']:.1f}%",f"{d_avg['funnel_success_pct']:.1f}%")
+                cmp_section_card("Funnel Protection", DEF_TONES[2], [
+                    ("Funnel Protection Actions (AVG)", d_game["funnel_actions_p90"], f"{d_avg['funnel_actions_p90']:.1f}"),
+                    ("% FPA Successful", d_game["funnel_success_pct"], d_avg["funnel_success_pct"],
+                     f"{d_game['funnel_success_pct']:.1f}%", f"{d_avg['funnel_success_pct']:.1f}%"),
                 ])
