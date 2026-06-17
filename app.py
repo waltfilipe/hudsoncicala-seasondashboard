@@ -87,7 +87,7 @@ C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
 PASS_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
-DEF_TONES = ["#fde68a", "#fbbf24", "#eab308"]
+DEF_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
 NX_XT, NY_XT = 16, 12
@@ -827,14 +827,19 @@ def _kpi_status(val: float, target: float) -> tuple:
         return "close", "Close to Target", "#f59e0b"
     return "miss", "Below Target", "#ef4444"
 
-def _target_card_shell(title, border_color, body_html):
+def _item_sep(idx, total):
+    return "" if idx == total - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
+
+def _target_card_shell(title, border_color, body_html, compact=False):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
     grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.18) 0%, "
             f"rgba(24,24,38,0.55) 55%, rgba(16,16,26,0.82) 100%)")
+    pad = "14px 16px 12px 16px" if compact else "18px 20px 14px 20px"
+    mb = "8px" if compact else "12px"
     html = (f'<div style="position:relative;background:{grad};'
             f'border:1px solid rgba({r},{g},{b},0.35);border-radius:16px;'
-            f'padding:18px 20px 14px 20px;margin-bottom:12px;'
+            f'padding:{pad};margin-bottom:{mb};'
             f'box-shadow:0 10px 28px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06);'
             f'overflow:hidden">')
     html += (f'<div style="position:absolute;top:0;left:0;height:3px;width:100%;'
@@ -849,7 +854,159 @@ def _target_card_shell(title, border_color, body_html):
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def _target_card_style_a(title, border_color, items):
+def _body_data_simple(items):
+    body = ""
+    for idx, item in enumerate(items):
+        label, disp_val = item[0], item[3]
+        extra = item[5] if len(item) > 5 else ""
+        body += f'<div style="{_item_sep(idx, len(items))}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
+        body += f'<div style="font-size:28px;font-weight:800;color:#ffffff;line-height:1.1">{disp_val}</div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px">{extra}</div>'
+        body += '</div>'
+    return body
+
+def _body_target_a(border_color, items):
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        pct = _target_progress(val, target)
+        bar_pct = min(pct, 100.0)
+        bar_color = "#22c55e" if val >= target else "#3b82f6" if pct >= 75 else "#f59e0b"
+        body += f'<div style="{_item_sep(idx, len(items))}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
+        body += f'<div style="font-size:11px;color:#8b93a7;margin-bottom:8px">Target <b style="color:#eef1f7">{disp_tgt}</b></div>'
+        body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
+                 f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
+        body += f'<div style="display:flex;justify-content:space-between;margin-top:5px">{_target_delta_html(val, target)}'
+        body += f'<span style="color:#64748b;font-size:10px">{min(pct, 100):.0f}% of target</span></div></div>'
+    return body
+
+def _body_target_b(border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgba({r},{g},{b},0.85)"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        status = "Above target" if val >= target else "Below target"
+        status_color = "#22c55e" if val >= target else "#f59e0b"
+        sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
+        body += f'<div style="{sep}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += (f'<div style="text-align:center;border-radius:12px;padding:12px 10px;'
+                 f'border:1px solid rgba({r},{g},{b},0.25);background:rgba({r},{g},{b},0.12)">')
+        body += f'<div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:{accent}">TARGET</div>'
+        body += f'<div style="font-size:26px;font-weight:800;color:{accent};line-height:1.1;margin-top:4px">{disp_tgt}</div></div>'
+        body += f'<div style="text-align:center;margin-top:6px"><span style="color:{status_color};font-size:10px;font-weight:700">{status}</span></div></div>'
+    return body
+
+def _body_target_c(border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgb({r},{g},{b})"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        pct = min(_target_progress(val, target), 100.0)
+        ring_color = "#22c55e" if val >= target else accent
+        body += f'<div style="{_item_sep(idx, len(items))}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += '<div style="display:flex;align-items:center;gap:10px">'
+        body += (f'<div style="width:46px;height:46px;border-radius:50%;flex-shrink:0;'
+                 f'background:conic-gradient({ring_color} {pct:.1f}%, rgba(255,255,255,0.08) 0);'
+                 f'display:flex;align-items:center;justify-content:center">'
+                 f'<div style="width:34px;height:34px;border-radius:50%;background:#14141f;'
+                 f'display:flex;align-items:center;justify-content:center;'
+                 f'font-size:9px;font-weight:800;color:#ffffff">{pct:.0f}%</div></div>')
+        body += (f'<span style="font-size:11px;font-weight:700;color:{accent};background:rgba({r},{g},{b},0.10);'
+                 f'border:1px dashed rgba({r},{g},{b},0.45);border-radius:999px;padding:4px 10px">'
+                 f'Target {disp_tgt}</span></div>')
+        body += f'<div style="margin-top:6px">{_target_delta_html(val, target)}</div></div>'
+    return body
+
+def _body_target_d(border_color, items):
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        status_key, status_label, status_color = _kpi_status(val, target)
+        pct = min(_target_progress(val, target), 100.0)
+        icon = "✓" if status_key == "hit" else "~" if status_key == "close" else "✗"
+        body += f'<div style="{_item_sep(idx, len(items))}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += '<div style="display:flex;align-items:center;gap:12px">'
+        body += (f'<div style="flex-shrink:0;width:52px;height:52px;border-radius:12px;'
+                 f'background:rgba({int(status_color[1:3],16)},{int(status_color[3:5],16)},{int(status_color[5:7],16)},0.18);'
+                 f'border:2px solid {status_color};display:flex;align-items:center;justify-content:center;'
+                 f'font-size:22px;font-weight:800;color:{status_color}">{icon}</div>')
+        body += '<div>'
+        body += f'<div style="font-size:22px;font-weight:800;color:#eef1f7">{disp_tgt}</div>'
+        body += (f'<div style="margin-top:4px"><span style="color:{status_color};font-size:11px;font-weight:700">'
+                 f'{status_label}</span>'
+                 f'<span style="color:#64748b;font-size:10px;margin-left:8px">{pct:.0f}% of target</span></div></div></div></div>')
+    return body
+
+def _body_target_e(border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgb({r},{g},{b})"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        pct = _target_progress(val, target)
+        bar_pct = min(pct, 100.0)
+        _, status_label, status_color = _kpi_status(val, target)
+        max_scale = max(target * 1.15, val, target, 0.01)
+        target_pos = min((target / max_scale) * 100.0, 100.0)
+        bar_color = "#22c55e" if val >= target else "#f59e0b" if pct >= 85 else accent
+        body += f'<div style="{_item_sep(idx, len(items))}">'
+        body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+        body += f'<span style="font-size:12px;font-weight:600;color:#c7cdda">{label}</span>'
+        body += f'<span style="font-size:10px;font-weight:700;color:{status_color};background:rgba(255,255,255,0.06);border-radius:999px;padding:2px 8px">{status_label}</span>'
+        body += '</div>'
+        body += f'<div style="font-size:11px;color:#8b93a7;margin-bottom:8px">Target <b style="color:#eef1f7">{disp_tgt}</b></div>'
+        body += '<div style="position:relative;height:14px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
+        body += (f'<div style="position:absolute;top:0;left:0;height:100%;width:{bar_pct:.1f}%;'
+                 f'background:{bar_color};border-radius:999px;opacity:0.90"></div>')
+        body += (f'<div style="position:absolute;top:-3px;left:{target_pos:.1f}%;width:3px;height:20px;'
+                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,0.5)"></div>')
+        body += '</div>'
+        body += f'<div style="margin-top:5px">{_target_delta_html(val, target)}</div></div>'
+    return body
+
+def _body_target_f(border_color, items):
+    body = '<div style="display:flex;flex-direction:column;gap:10px">'
+    for item in items:
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_tgt = item[4]
+        _, status_label, status_color = _kpi_status(val, target)
+        pct = min(_target_progress(val, target), 100.0)
+        glow = f"0 0 12px {status_color}55"
+        body += (f'<div style="background:rgba(0,0,0,0.25);border:1px solid {status_color};'
+                 f'border-radius:12px;padding:12px 14px;box-shadow:{glow}">')
+        body += '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        body += f'<div style="font-size:11px;font-weight:600;color:#c7cdda;max-width:55%">{label}</div>'
+        body += (f'<div style="text-align:right"><div style="font-size:9px;font-weight:700;letter-spacing:0.8px;'
+                 f'color:{status_color};text-transform:uppercase">{status_label}</div>'
+                 f'<div style="font-size:10px;color:#64748b;margin-top:2px">{pct:.0f}%</div></div></div>')
+        body += f'<div style="font-size:22px;font-weight:800;color:{status_color};margin-top:8px">{disp_tgt}</div>'
+        body += f'<div style="margin-top:6px">{_target_delta_html(val, target)}</div></div>'
+    body += '</div>'
+    return body
+
+TARGET_BODY_BUILDERS = {
+    "A — Progress Bar": _body_target_a,
+    "B — Side by Side": _body_target_b,
+    "C — Gauge Pill": _body_target_c,
+    "D — KPI Badge": _body_target_d,
+    "E — Bullet Chart": _body_target_e,
+    "F — Scorecard": _body_target_f,
+}
+
+def _target_card_style_a(title, border_color, items, layout="combined"):
     r, g, b = _accent_rgb(border_color)
     body = ""
     for idx, item in enumerate(items):
@@ -873,9 +1030,13 @@ def _target_card_style_a(title, border_color, items):
         if extra:
             body += f'<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
         body += '</div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_a(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
-def _target_card_style_b(title, border_color, items):
+def _target_card_style_b(title, border_color, items, layout="combined"):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgba({r},{g},{b},0.85)"
     body = ""
@@ -902,9 +1063,13 @@ def _target_card_style_b(title, border_color, items):
         if extra:
             body += f'<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center">{extra}</div>'
         body += '</div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_b(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
-def _target_card_style_c(title, border_color, items):
+def _target_card_style_c(title, border_color, items, layout="combined"):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
     body = ""
@@ -936,9 +1101,13 @@ def _target_card_style_c(title, border_color, items):
         if extra:
             body += f'<div style="font-size:10px;color:#64748b;margin-top:3px">{extra}</div>'
         body += '</div></div></div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_c(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
-def _target_card_style_d(title, border_color, items):
+def _target_card_style_d(title, border_color, items, layout="combined"):
     """KPI badge — traffic-light status (Hit / Close / Miss) with value vs target."""
     r, g, b = _accent_rgb(border_color)
     body = ""
@@ -966,9 +1135,13 @@ def _target_card_style_d(title, border_color, items):
         if extra:
             body += f'<div style="font-size:10px;color:#64748b;margin-top:3px">{extra}</div>'
         body += '</div></div></div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_d(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
-def _target_card_style_e(title, border_color, items):
+def _target_card_style_e(title, border_color, items, layout="combined"):
     """Bullet chart — value bar with target marker and zone coloring."""
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
@@ -1003,9 +1176,13 @@ def _target_card_style_e(title, border_color, items):
         if extra:
             body += f'<div style="font-size:10px;color:#64748b;margin-top:3px;text-align:right">{extra}</div>'
         body += '</div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_e(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
-def _target_card_style_f(title, border_color, items):
+def _target_card_style_f(title, border_color, items, layout="combined"):
     """Scorecard — compact KPI tiles with hit/close/miss border glow."""
     r, g, b = _accent_rgb(border_color)
     body = '<div style="display:flex;flex-direction:column;gap:10px">'
@@ -1033,7 +1210,11 @@ def _target_card_style_f(title, border_color, items):
             body += f'<div style="font-size:10px;color:#64748b;margin-top:4px">{extra}</div>'
         body += '</div>'
     body += '</div>'
-    _target_card_shell(title, border_color, body)
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_f(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, body)
 
 TARGET_CARD_STYLES = {
     "A — Progress Bar": _target_card_style_a,
@@ -1044,9 +1225,9 @@ TARGET_CARD_STYLES = {
     "F — Scorecard": _target_card_style_f,
 }
 
-def target_section_card(title, border_color, items, style_key):
+def target_section_card(title, border_color, items, style_key, layout_mode="combined"):
     renderer = TARGET_CARD_STYLES.get(style_key, _target_card_style_a)
-    renderer(title, border_color, items)
+    renderer(title, border_color, items, layout=layout_mode)
 
 # ── DRAW HELPERS (PITCH) ───────────────────────────────────────
 def _base_pitch(bg="#1a1a2e"):
@@ -1234,6 +1415,12 @@ def draw_defensive_heatmap(df):
     _attack_arrow(fig); return _save_fig(fig), fig
 
 # ── PDF REPORT ─────────────────────────────────────────────────
+PDF_BG = "#0f0f1a"
+PDF_CARD_BG = "#1a1a2e"
+PDF_TEXT = "#eef1f7"
+PDF_MUTED = "#8b93a7"
+PDF_LABEL = "#c7cdda"
+
 def _fig_to_png_bytes(fig):
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=140, facecolor=fig.get_facecolor(), bbox_inches="tight")
@@ -1246,35 +1433,131 @@ def _pil_to_png_bytes(pil_img):
     buf.seek(0)
     return buf
 
-def _pdf_stat_table(cards, accent_hex):
-    rows = []
-    for card_title, metrics in cards:
-        rows.append([card_title.upper(), ""])
-        for label, value in metrics:
-            rows.append([label, value])
-        rows.append(["", ""])
-    tbl = Table(rows, colWidths=[9.5 * cm, 5.5 * cm])
+def _pdf_draw_dark_page(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(rl_colors.HexColor(PDF_BG))
+    canvas.rect(0, 0, doc.pagesize[0], doc.pagesize[1], fill=1, stroke=0)
+    canvas.restoreState()
+
+def _pdf_styles():
+    styles = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle(
+            "PdfTitle", parent=styles["Heading1"],
+            fontSize=20, textColor=rl_colors.HexColor(PDF_TEXT),
+            spaceAfter=4, alignment=1, fontName="Helvetica-Bold",
+        ),
+        "sub": ParagraphStyle(
+            "PdfSub", parent=styles["Normal"],
+            fontSize=9, textColor=rl_colors.HexColor(PDF_MUTED), alignment=1,
+        ),
+        "section": ParagraphStyle(
+            "PdfSection", parent=styles["Heading2"],
+            fontSize=13, textColor=rl_colors.HexColor(PASS_TONES[1]),
+            spaceBefore=6, spaceAfter=10, fontName="Helvetica-Bold",
+        ),
+        "map_label": ParagraphStyle(
+            "PdfMapLabel", parent=styles["Normal"],
+            fontSize=9, textColor=rl_colors.HexColor("#cccccc"),
+            spaceAfter=4, fontName="Helvetica-Bold",
+        ),
+        "card_title": ParagraphStyle(
+            "PdfCardTitle", parent=styles["Normal"],
+            fontSize=8, textColor=rl_colors.white, fontName="Helvetica-Bold",
+            leading=10,
+        ),
+        "metric_label": ParagraphStyle(
+            "PdfMetricLabel", parent=styles["Normal"],
+            fontSize=8, textColor=rl_colors.HexColor(PDF_LABEL), leading=10,
+        ),
+        "metric_val": ParagraphStyle(
+            "PdfMetricVal", parent=styles["Normal"],
+            fontSize=11, textColor=rl_colors.HexColor(PDF_TEXT), fontName="Helvetica-Bold",
+            leading=13,
+        ),
+        "metric_tgt": ParagraphStyle(
+            "PdfMetricTgt", parent=styles["Normal"],
+            fontSize=7, textColor=rl_colors.HexColor(PDF_MUTED), leading=9,
+        ),
+    }
+
+def _pdf_status_text(val, target):
+    pct = _target_progress(val, target)
+    if val >= target:
+        return "Target Hit", "#22c55e"
+    if pct >= 85.0:
+        return "Close to Target", "#f59e0b"
+    return "Below Target", "#ef4444"
+
+def _pdf_dark_card(accent_hex, title, metrics, pstyles):
+    """metrics: list of (label, disp_val, disp_tgt, val_float, target_float)"""
+    rows = [[Paragraph(title.upper(), pstyles["card_title"]), ""]]
+    row_idx = 0
     style_cmds = [
-        ("TEXTCOLOR", (0, 0), (-1, -1), rl_colors.HexColor("#1a1a2e")),
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [rl_colors.HexColor("#f4f6fb"), rl_colors.white]),
-        ("GRID", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#dde3ef")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_CARD_BG)),
+        ("BOX", (0, 0), (-1, -1), 0.8, rl_colors.HexColor(accent_hex)),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor(accent_hex)),
+        ("SPAN", (0, 0), (-1, 0)),
     ]
-    row_idx = 0
-    for card_title, metrics in cards:
-        style_cmds.append(("BACKGROUND", (0, row_idx), (-1, row_idx), rl_colors.HexColor(accent_hex)))
-        style_cmds.append(("TEXTCOLOR", (0, row_idx), (-1, row_idx), rl_colors.white))
-        style_cmds.append(("FONTNAME", (0, row_idx), (-1, row_idx), "Helvetica-Bold"))
-        style_cmds.append(("FONTSIZE", (0, row_idx), (-1, row_idx), 10))
-        row_idx += 1 + len(metrics) + 1
+    for label, disp_val, disp_tgt, val, target in metrics:
+        row_idx += 1
+        status, status_color = _pdf_status_text(val, target)
+        pct = min(_target_progress(val, target), 100.0)
+        cell = [
+            Paragraph(label, pstyles["metric_label"]),
+            Paragraph(
+                f'<font color="{PDF_TEXT}"><b>{disp_val}</b></font><br/>'
+                f'<font color="{PDF_MUTED}">Target: {disp_tgt}</font><br/>'
+                f'<font color="{status_color}">{status} ({pct:.0f}%)</font>',
+                pstyles["metric_tgt"],
+            ),
+        ]
+        rows.append(cell)
+        style_cmds.append(("LINEABOVE", (0, row_idx), (-1, row_idx), 0.3, rl_colors.HexColor("#2a2a3e")))
+    tbl = Table(rows, colWidths=[4.8 * cm, 3.6 * cm])
     tbl.setStyle(TableStyle(style_cmds))
     return tbl
+
+def _pdf_maps_column(map_entries, pstyles, map_w, map_h):
+    rows = []
+    for label, img_buf in map_entries:
+        rows.append([Paragraph(label, pstyles["map_label"])])
+        rows.append([RLImage(img_buf, width=map_w, height=map_h)])
+        rows.append([Spacer(1, 0.15 * cm)])
+    col = Table(rows, colWidths=[map_w + 0.2 * cm])
+    col.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+    ]))
+    return col
+
+def _pdf_stats_column(cards, pstyles):
+    rows = [[card] for card in cards]
+    col = Table(rows, colWidths=[8.6 * cm])
+    col.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return col
+
+def _pdf_section_layout(map_entries, stat_cards, pstyles, map_w, map_h):
+    maps_col = _pdf_maps_column(map_entries, pstyles, map_w, map_h)
+    stats_col = _pdf_stats_column(stat_cards, pstyles)
+    layout = Table([[maps_col, stats_col]], colWidths=[map_w + 0.5 * cm, 8.8 * cm])
+    layout.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return layout
 
 def generate_season_pdf():
     if not PDF_AVAILABLE:
@@ -1300,122 +1583,100 @@ def generate_season_pdf():
         else:
             d_def[k] = 0
 
-    img_pm, fig_pm = draw_pass_map(df_pass)
-    plt.close(fig_pm)
-    img_ht, fig_ht = draw_corridor_heatmap(df_pass)
-    plt.close(fig_ht)
-    _, fig_xt = draw_top_xt_map(df_pass, top_n=10)
-    buf_xt = _fig_to_png_bytes(fig_xt)
-    plt.close(fig_xt)
+    _pb, _db = {}, {}
+    if pass_stats_list:
+        for k in pass_stats_list[0].keys():
+            if isinstance(pass_stats_list[0][k], (int, float)):
+                _pb[k] = sum(s[k] for s in pass_stats_list) / len(pass_stats_list)
+    if def_all:
+        for k in def_all[0].keys():
+            if isinstance(def_all[0][k], (int, float)):
+                _db[k] = sum(s[k] for s in def_all) / len(def_all)
+    T_pdf = build_metric_targets(_pb, _db)
 
-    img_def, fig_def = draw_defensive_map(df_def)
-    plt.close(fig_def)
-    img_dhm, fig_dhm = draw_defensive_heatmap(df_def)
-    plt.close(fig_dhm)
-    img_fun, fig_fun = draw_funnel_protection_map(df_def)
-    plt.close(fig_fun)
+    img_pm, fig_pm = draw_pass_map(df_pass); plt.close(fig_pm)
+    img_ht, fig_ht = draw_corridor_heatmap(df_pass); plt.close(fig_ht)
+    _, fig_xt = draw_top_xt_map(df_pass, top_n=10)
+    buf_xt = _fig_to_png_bytes(fig_xt); plt.close(fig_xt)
+    img_def, fig_def = draw_defensive_map(df_def); plt.close(fig_def)
+    img_dhm, fig_dhm = draw_defensive_heatmap(df_def); plt.close(fig_dhm)
+    img_fun, fig_fun = draw_funnel_protection_map(df_def); plt.close(fig_fun)
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=landscape(A4),
-        leftMargin=1.2 * cm, rightMargin=1.2 * cm,
-        topMargin=1.0 * cm, bottomMargin=1.0 * cm,
+        leftMargin=1.0 * cm, rightMargin=1.0 * cm,
+        topMargin=0.8 * cm, bottomMargin=0.8 * cm,
     )
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "ReportTitle", parent=styles["Heading1"],
-        fontSize=22, textColor=rl_colors.HexColor("#1a1a2e"),
-        spaceAfter=6, alignment=1,
-    )
-    section_style = ParagraphStyle(
-        "Section", parent=styles["Heading2"],
-        fontSize=14, textColor=rl_colors.HexColor(PASS_TONES[1]),
-        spaceBefore=10, spaceAfter=8,
-    )
-    sub_style = ParagraphStyle(
-        "Sub", parent=styles["Normal"],
-        fontSize=9, textColor=rl_colors.HexColor("#555566"), alignment=1,
-    )
-    map_w = 8.2 * cm
-    story = [
-        Spacer(1, 0.5 * cm),
-        Paragraph("Hudson Cicala — Season Dashboard", title_style),
-        Paragraph("2026 Season • All Matches Report", sub_style),
-        Spacer(1, 0.4 * cm),
-        Paragraph("Passing Analysis", section_style),
-    ]
+    ps = _pdf_styles()
+    map_w, map_h = 12.5 * cm, 4.2 * cm
 
+    pass_maps = [
+        ("Pass Map", _pil_to_png_bytes(img_pm)),
+        ("Zone Heatmap (Destination)", _pil_to_png_bytes(img_ht)),
+        ("Top 10 Pass Impact", buf_xt),
+    ]
     pass_cards = [
-        ("Overview", [
-            ("Total Passes (AVG)", f"{s_pass['total_p90']:.1f}"),
-            ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%"),
-        ]),
-        ("Advanced", [
-            ("Advanced Passes (AVG)", f"{s_pass['advanced_passes_p90']:.1f}"),
-            ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%"),
-        ]),
-        ("Impact", [
-            ("Pass Impact Value (AVG)", f"{s_pass['xt_p90']:.1f}"),
-            ("Total Impact", f"{total_impact:.3f}"),
-            ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%"),
-        ]),
+        _pdf_dark_card(PASS_TONES[0], "Overview", [
+            ("Total Passes Per Game", f"{s_pass['total_p90']:.1f}", f"{T_pdf['total_p90']:.1f}",
+             s_pass["total_p90"], T_pdf["total_p90"]),
+            ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
+             s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
+        ], ps),
+        _pdf_dark_card(PASS_TONES[1], "Advanced", [
+            ("Advanced Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
+             s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
+            ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
+             s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
+        ], ps),
+        _pdf_dark_card(PASS_TONES[2], "Impact", [
+            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
+             s_pass["xt_p90"], T_pdf["xt_p90"]),
+            ("Total Impact", f"{total_impact:.3f}", "—", total_impact, total_impact),
+            ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%", f"{T_pdf['pos_pct']:.1f}%",
+             s_pass["pos_pct"], T_pdf["pos_pct"]),
+        ], ps),
     ]
-    story.append(_pdf_stat_table(pass_cards, PASS_TONES[0]))
-    story.append(Spacer(1, 0.3 * cm))
 
-    pass_maps = Table([
-        [Paragraph("<b>Pass Map</b>", styles["Normal"]),
-         Paragraph("<b>Zone Heatmap</b>", styles["Normal"]),
-         Paragraph("<b>Top 10 Pass Impact</b>", styles["Normal"])],
-        [RLImage(_pil_to_png_bytes(img_pm), width=map_w, height=map_w * 0.65),
-         RLImage(_pil_to_png_bytes(img_ht), width=map_w, height=map_w * 0.65),
-         RLImage(buf_xt, width=map_w, height=map_w * 0.65)],
-    ], colWidths=[map_w + 0.2 * cm] * 3)
-    pass_maps.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.extend([pass_maps, PageBreak()])
-
-    def_section = ParagraphStyle(
-        "DefSection", parent=styles["Heading2"],
-        fontSize=14, textColor=rl_colors.HexColor(DEF_TONES[1]),
-        spaceBefore=4, spaceAfter=8,
-    )
-    story.append(Paragraph("Defensive Actions", def_section))
-
+    def_maps = [
+        ("Defensive Actions Map", _pil_to_png_bytes(img_def)),
+        ("Defensive Heatmap", _pil_to_png_bytes(img_dhm)),
+        ("Funnel Protection Actions", _pil_to_png_bytes(img_fun)),
+    ]
     def_cards = [
-        ("Overview", [
-            ("Defensive Actions (AVG)", f"{d_def['total_actions_p90']:.1f}"),
-            ("Actions in Own Half (AVG)", f"{d_def['actions_own_p90']:.1f}"),
-        ]),
-        ("Duels", [
-            ("Defensive Duels (AVG)", f"{d_def['duels_p90']:.1f}"),
-            ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%"),
-        ]),
-        ("Funnel Protection", [
-            ("Funnel Protection Actions (AVG)", f"{d_def['funnel_actions_p90']:.1f}"),
-            ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%"),
-        ]),
+        _pdf_dark_card(PASS_TONES[0], "Overview", [
+            ("Defensive Actions Per Game", f"{d_def['total_actions_p90']:.1f}", f"{T_pdf['total_actions_p90']:.1f}",
+             d_def["total_actions_p90"], T_pdf["total_actions_p90"]),
+            ("Actions in Own Half Per Game", f"{d_def['actions_own_p90']:.1f}", f"{T_pdf['actions_own_p90']:.1f}",
+             d_def["actions_own_p90"], T_pdf["actions_own_p90"]),
+        ], ps),
+        _pdf_dark_card(PASS_TONES[1], "Duels", [
+            ("Defensive Duels Per Game", f"{d_def['duels_p90']:.1f}", f"{T_pdf['duels_p90']:.1f}",
+             d_def["duels_p90"], T_pdf["duels_p90"]),
+            ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%", f"{T_pdf['duels_won_pct']:.1f}%",
+             d_def["duels_won_pct"], T_pdf["duels_won_pct"]),
+        ], ps),
+        _pdf_dark_card(PASS_TONES[2], "Funnel Protection", [
+            ("Funnel Protection Actions Per Game", f"{d_def['funnel_actions_p90']:.1f}",
+             f"{T_pdf['funnel_actions_p90']:.1f}", d_def["funnel_actions_p90"], T_pdf["funnel_actions_p90"]),
+            ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%", f"{T_pdf['funnel_success_pct']:.1f}%",
+             d_def["funnel_success_pct"], T_pdf["funnel_success_pct"]),
+        ], ps),
     ]
-    story.append(_pdf_stat_table(def_cards, DEF_TONES[1]))
-    story.append(Spacer(1, 0.3 * cm))
 
-    def_maps = Table([
-        [Paragraph("<b>Defensive Actions Map</b>", styles["Normal"]),
-         Paragraph("<b>Defensive Heatmap</b>", styles["Normal"]),
-         Paragraph("<b>Funnel Protection</b>", styles["Normal"])],
-        [RLImage(_pil_to_png_bytes(img_def), width=map_w, height=map_w * 0.65),
-         RLImage(_pil_to_png_bytes(img_dhm), width=map_w, height=map_w * 0.65),
-         RLImage(_pil_to_png_bytes(img_fun), width=map_w, height=map_w * 0.65)],
-    ], colWidths=[map_w + 0.2 * cm] * 3)
-    def_maps.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.append(def_maps)
+    story = [
+        Spacer(1, 0.2 * cm),
+        Paragraph("Hudson Cicala — Season Dashboard", ps["title"]),
+        Paragraph("2026 Season • All Matches Report", ps["sub"]),
+        Spacer(1, 0.3 * cm),
+        Paragraph("Passing Analysis", ps["section"]),
+        _pdf_section_layout(pass_maps, pass_cards, ps, map_w, map_h),
+        PageBreak(),
+        Paragraph("Defensive Actions", ps["section"]),
+        _pdf_section_layout(def_maps, def_cards, ps, map_w, map_h),
+    ]
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_pdf_draw_dark_page, onLaterPages=_pdf_draw_dark_page)
     buf.seek(0)
     return buf.getvalue()
 
@@ -1464,6 +1725,13 @@ CARD_STYLE = st.sidebar.radio(
     index=0,
     help="Compare 6 designs showing Hudson's value vs target for each metric.",
 )
+CARD_LAYOUT = st.sidebar.radio(
+    "Card separation",
+    options=["Combined", "Separated"],
+    index=0,
+    help="Separated shows data in one card and target comparison in a second card below.",
+)
+_layout_mode = "separated" if CARD_LAYOUT == "Separated" else "combined"
 
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
@@ -1488,7 +1756,7 @@ with st.sidebar.expander("Season targets (reference)"):
     _tgt_rows = []
     for _k, _v in T.items():
         _base = _pass_base.get(_k, _def_base.get(_k, 0))
-        _tgt_rows.append({"Metric": _k, "Hudson AVG": round(_base, 2), "Target": _v})
+        _tgt_rows.append({"Metric": _k, "Hudson Per Game": round(_base, 2), "Target": _v})
     st.dataframe(pd.DataFrame(_tgt_rows), hide_index=True, use_container_width=True)
 
 # ── LAYOUT ─────────────────────────────────────────────────────
@@ -1573,25 +1841,25 @@ with tab_dash:
 
         with col_s1:
             target_section_card("Overview", PASS_TONES[0], [
-                ("Total Passes (AVG)", s_game["total_p90"], T["total_p90"],
+                ("Total Passes Per Game", s_game["total_p90"], T["total_p90"],
                  f"{s_game['total_p90']:.1f}", f"{T['total_p90']:.1f}"),
                 ("% Accuracy", s_game["accuracy_pct"], T["accuracy_pct"],
                  f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
         with col_s2:
             target_section_card("Advanced", PASS_TONES[1], [
-                ("Advanced Passes (AVG)", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
+                ("Advanced Passes Per Game", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
                  f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
                 ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
                  f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
         with col_s3:
             target_section_card("Impact", PASS_TONES[2], [
-                ("Pass Impact Value (AVG)", s_game["xt_p90"], T["xt_p90"],
+                ("Pass Impact Value Per Game", s_game["xt_p90"], T["xt_p90"],
                  f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}", f"Total: {total_impact_value:.3f}"),
                 ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
                  f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
 
     # ═══════════════════════════════════════════════════════════
     # DEFENSIVE ACTIONS TAB
@@ -1658,23 +1926,23 @@ with tab_dash:
         # ── DEFENSIVE STATS CARDS ─────────────────────────────
         col_ds1, col_ds2, col_ds3 = st.columns(3)
         with col_ds1:
-            target_section_card("Overview", DEF_TONES[0], [
-                ("Defensive Actions (AVG)", d_game["total_actions_p90"], T["total_actions_p90"],
+            target_section_card("Overview", PASS_TONES[0], [
+                ("Defensive Actions Per Game", d_game["total_actions_p90"], T["total_actions_p90"],
                  f"{d_game['total_actions_p90']:.1f}", f"{T['total_actions_p90']:.1f}"),
-                ("Actions in Own Half (AVG)", d_game["actions_own_p90"], T["actions_own_p90"],
+                ("Actions in Own Half Per Game", d_game["actions_own_p90"], T["actions_own_p90"],
                  f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
         with col_ds2:
-            target_section_card("Duels", DEF_TONES[1], [
-                ("Defensive Duels (AVG)", d_game["duels_p90"], T["duels_p90"],
+            target_section_card("Duels", PASS_TONES[1], [
+                ("Defensive Duels Per Game", d_game["duels_p90"], T["duels_p90"],
                  f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
                 ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
                  f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
         with col_ds3:
-            target_section_card("Funnel Protection", DEF_TONES[2], [
-                ("Funnel Protection Actions (AVG)", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
+            target_section_card("Funnel Protection", PASS_TONES[2], [
+                ("Funnel Protection Actions Per Game", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
                  f"{d_game['funnel_actions_p90']:.1f}", f"{T['funnel_actions_p90']:.1f}"),
                 ("% FPA Successful", d_game["funnel_success_pct"], T["funnel_success_pct"],
                  f"{d_game['funnel_success_pct']:.1f}%", f"{T['funnel_success_pct']:.1f}%"),
-            ], CARD_STYLE)
+            ], CARD_STYLE, _layout_mode)
