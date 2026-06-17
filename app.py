@@ -860,12 +860,21 @@ def _body_data_simple(items):
         label, disp_val = item[0], item[3]
         extra = item[5] if len(item) > 5 else ""
         body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
-        body += f'<div style="font-size:28px;font-weight:800;color:#ffffff;line-height:1.1">{disp_val}</div>'
+        body += '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">'
+        body += f'<span style="font-size:12px;font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
+        body += f'<span style="font-size:26px;font-weight:800;color:#ffffff;white-space:nowrap">{disp_val}</span>'
+        body += '</div>'
         if extra:
-            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px">{extra}</div>'
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
         body += '</div>'
     return body
+
+def _body_target_row_header(label, right_html=""):
+    return (
+        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">'
+        f'<span style="font-size:12px;font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
+        f'{right_html}</div>'
+    )
 
 def _body_target_a(border_color, items):
     body = ""
@@ -876,12 +885,15 @@ def _body_target_a(border_color, items):
         bar_pct = min(pct, 100.0)
         bar_color = "#22c55e" if val >= target else "#3b82f6" if pct >= 75 else "#f59e0b"
         body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
-        body += f'<div style="font-size:11px;color:#8b93a7;margin-bottom:8px">Target <b style="color:#eef1f7">{disp_tgt}</b></div>'
+        body += _body_target_row_header(
+            label,
+            f'<span style="font-size:11px;color:#8b93a7;white-space:nowrap">Target <b style="color:#eef1f7">{disp_tgt}</b></span>',
+        )
         body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
                  f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
-        body += f'<div style="display:flex;justify-content:space-between;margin-top:5px">{_target_delta_html(val, target)}'
-        body += f'<span style="color:#64748b;font-size:10px">{min(pct, 100):.0f}% of target</span></div></div>'
+        body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">'
+                 f'{_target_delta_html(val, target)}'
+                 f'<span style="color:#64748b;font-size:10px">{min(pct, 100):.0f}% of target</span></div></div>')
     return body
 
 def _body_target_b(border_color, items):
@@ -893,14 +905,17 @@ def _body_target_b(border_color, items):
         disp_tgt = item[4]
         status = "Above target" if val >= target else "Below target"
         status_color = "#22c55e" if val >= target else "#f59e0b"
-        sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
+        sep = "" if idx == len(items) - 1 else "margin-bottom:10px;"
         body += f'<div style="{sep}">'
-        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
-        body += (f'<div style="text-align:center;border-radius:12px;padding:12px 10px;'
-                 f'border:1px solid rgba({r},{g},{b},0.25);background:rgba({r},{g},{b},0.12)">')
-        body += f'<div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:{accent}">TARGET</div>'
-        body += f'<div style="font-size:26px;font-weight:800;color:{accent};line-height:1.1;margin-top:4px">{disp_tgt}</div></div>'
-        body += f'<div style="text-align:center;margin-top:6px"><span style="color:{status_color};font-size:10px;font-weight:700">{status}</span></div></div>'
+        body += _body_target_row_header(
+            label,
+            f'<span style="font-size:10px;font-weight:700;color:{status_color};white-space:nowrap">{status}</span>',
+        )
+        body += (f'<div style="display:flex;align-items:center;justify-content:center;gap:8px;'
+                 f'border-radius:10px;padding:8px 12px;border:1px solid rgba({r},{g},{b},0.25);'
+                 f'background:rgba({r},{g},{b},0.12)">'
+                 f'<span style="font-size:9px;font-weight:700;letter-spacing:1px;color:{accent}">TARGET</span>'
+                 f'<span style="font-size:22px;font-weight:800;color:{accent}">{disp_tgt}</span></div></div>')
     return body
 
 def _body_target_c(border_color, items):
@@ -913,18 +928,16 @@ def _body_target_c(border_color, items):
         pct = min(_target_progress(val, target), 100.0)
         ring_color = "#22c55e" if val >= target else accent
         body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
         body += '<div style="display:flex;align-items:center;gap:10px">'
-        body += (f'<div style="width:46px;height:46px;border-radius:50%;flex-shrink:0;'
+        body += f'<span style="font-size:12px;font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
+        body += (f'<div style="width:38px;height:38px;border-radius:50%;flex-shrink:0;'
                  f'background:conic-gradient({ring_color} {pct:.1f}%, rgba(255,255,255,0.08) 0);'
                  f'display:flex;align-items:center;justify-content:center">'
-                 f'<div style="width:34px;height:34px;border-radius:50%;background:#14141f;'
+                 f'<div style="width:28px;height:28px;border-radius:50%;background:#14141f;'
                  f'display:flex;align-items:center;justify-content:center;'
-                 f'font-size:9px;font-weight:800;color:#ffffff">{pct:.0f}%</div></div>')
-        body += (f'<span style="font-size:11px;font-weight:700;color:{accent};background:rgba({r},{g},{b},0.10);'
-                 f'border:1px dashed rgba({r},{g},{b},0.45);border-radius:999px;padding:4px 10px">'
-                 f'Target {disp_tgt}</span></div>')
-        body += f'<div style="margin-top:6px">{_target_delta_html(val, target)}</div></div>'
+                 f'font-size:8px;font-weight:800;color:#ffffff">{pct:.0f}%</div></div>')
+        body += (f'<span style="font-size:11px;font-weight:700;color:{accent};white-space:nowrap">'
+                 f'Target {disp_tgt}</span></div></div>')
     return body
 
 def _body_target_d(border_color, items):
@@ -936,17 +949,16 @@ def _body_target_d(border_color, items):
         pct = min(_target_progress(val, target), 100.0)
         icon = "✓" if status_key == "hit" else "~" if status_key == "close" else "✗"
         body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
-        body += '<div style="display:flex;align-items:center;gap:12px">'
-        body += (f'<div style="flex-shrink:0;width:52px;height:52px;border-radius:12px;'
+        body += '<div style="display:flex;align-items:center;gap:10px">'
+        body += f'<span style="font-size:12px;font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
+        body += (f'<div style="flex-shrink:0;width:36px;height:36px;border-radius:10px;'
                  f'background:rgba({int(status_color[1:3],16)},{int(status_color[3:5],16)},{int(status_color[5:7],16)},0.18);'
                  f'border:2px solid {status_color};display:flex;align-items:center;justify-content:center;'
-                 f'font-size:22px;font-weight:800;color:{status_color}">{icon}</div>')
-        body += '<div>'
-        body += f'<div style="font-size:22px;font-weight:800;color:#eef1f7">{disp_tgt}</div>'
-        body += (f'<div style="margin-top:4px"><span style="color:{status_color};font-size:11px;font-weight:700">'
-                 f'{status_label}</span>'
-                 f'<span style="color:#64748b;font-size:10px;margin-left:8px">{pct:.0f}% of target</span></div></div></div></div>')
+                 f'font-size:18px;font-weight:800;color:{status_color}">{icon}</div>')
+        body += (f'<div style="text-align:right;white-space:nowrap">'
+                 f'<div style="font-size:18px;font-weight:800;color:#eef1f7">{disp_tgt}</div>'
+                 f'<div style="font-size:9px;font-weight:700;color:{status_color}">{status_label} · {pct:.0f}%</div></div>')
+        body += '</div></div>'
     return body
 
 def _body_target_e(border_color, items):
@@ -963,38 +975,35 @@ def _body_target_e(border_color, items):
         target_pos = min((target / max_scale) * 100.0, 100.0)
         bar_color = "#22c55e" if val >= target else "#f59e0b" if pct >= 85 else accent
         body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-        body += f'<span style="font-size:12px;font-weight:600;color:#c7cdda">{label}</span>'
-        body += f'<span style="font-size:10px;font-weight:700;color:{status_color};background:rgba(255,255,255,0.06);border-radius:999px;padding:2px 8px">{status_label}</span>'
-        body += '</div>'
-        body += f'<div style="font-size:11px;color:#8b93a7;margin-bottom:8px">Target <b style="color:#eef1f7">{disp_tgt}</b></div>'
-        body += '<div style="position:relative;height:14px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
+        body += _body_target_row_header(
+            label,
+            (f'<span style="font-size:10px;font-weight:700;color:{status_color};white-space:nowrap">'
+             f'{status_label} · Target <b style="color:#eef1f7">{disp_tgt}</b></span>'),
+        )
+        body += '<div style="position:relative;height:12px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
         body += (f'<div style="position:absolute;top:0;left:0;height:100%;width:{bar_pct:.1f}%;'
                  f'background:{bar_color};border-radius:999px;opacity:0.90"></div>')
-        body += (f'<div style="position:absolute;top:-3px;left:{target_pos:.1f}%;width:3px;height:20px;'
-                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,0.5)"></div>')
+        body += (f'<div style="position:absolute;top:-2px;left:{target_pos:.1f}%;width:2px;height:16px;'
+                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%)"></div>')
         body += '</div>'
-        body += f'<div style="margin-top:5px">{_target_delta_html(val, target)}</div></div>'
+        body += f'<div style="margin-top:4px">{_target_delta_html(val, target)}</div></div>'
     return body
 
 def _body_target_f(border_color, items):
-    body = '<div style="display:flex;flex-direction:column;gap:10px">'
-    for item in items:
+    body = ""
+    for idx, item in enumerate(items):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_tgt = item[4]
         _, status_label, status_color = _kpi_status(val, target)
         pct = min(_target_progress(val, target), 100.0)
-        glow = f"0 0 12px {status_color}55"
-        body += (f'<div style="background:rgba(0,0,0,0.25);border:1px solid {status_color};'
-                 f'border-radius:12px;padding:12px 14px;box-shadow:{glow}">')
-        body += '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-        body += f'<div style="font-size:11px;font-weight:600;color:#c7cdda;max-width:55%">{label}</div>'
-        body += (f'<div style="text-align:right"><div style="font-size:9px;font-weight:700;letter-spacing:0.8px;'
-                 f'color:{status_color};text-transform:uppercase">{status_label}</div>'
-                 f'<div style="font-size:10px;color:#64748b;margin-top:2px">{pct:.0f}%</div></div></div>')
-        body += f'<div style="font-size:22px;font-weight:800;color:{status_color};margin-top:8px">{disp_tgt}</div>'
-        body += f'<div style="margin-top:6px">{_target_delta_html(val, target)}</div></div>'
-    body += '</div>'
+        sep = "" if idx == len(items) - 1 else "margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);"
+        body += f'<div style="display:flex;align-items:center;gap:10px;{sep}">'
+        body += f'<span style="font-size:12px;font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
+        body += (f'<span style="font-size:10px;font-weight:700;color:{status_color};white-space:nowrap">'
+                 f'{status_label}</span>')
+        body += f'<span style="font-size:20px;font-weight:800;color:{status_color};white-space:nowrap">{disp_tgt}</span>'
+        body += f'<span style="font-size:9px;color:#64748b;white-space:nowrap">{pct:.0f}%</span>'
+        body += '</div>'
     return body
 
 TARGET_BODY_BUILDERS = {
@@ -1454,7 +1463,7 @@ def _pdf_styles():
         "section": ParagraphStyle(
             "PdfSection", parent=styles["Heading2"],
             fontSize=13, textColor=rl_colors.HexColor(PASS_TONES[1]),
-            spaceBefore=6, spaceAfter=10, fontName="Helvetica-Bold",
+            spaceBefore=0, spaceAfter=6, fontName="Helvetica-Bold",
         ),
         "map_label": ParagraphStyle(
             "PdfMapLabel", parent=styles["Normal"],
@@ -1489,6 +1498,18 @@ def _pdf_status_text(val, target):
         return "Close to Target", "#f59e0b"
     return "Below Target", "#ef4444"
 
+PDF_MAP_WIDTH = 10.0 * cm
+PDF_STATS_WIDTH = 8.6 * cm
+
+def _pdf_rl_image(img_buf, target_width):
+    img_buf.seek(0)
+    with Image.open(img_buf) as pil_img:
+        iw, ih = pil_img.size
+    img_buf.seek(0)
+    w = target_width
+    h = w * (ih / max(iw, 1))
+    return RLImage(img_buf, width=w, height=h), h
+
 def _pdf_dark_card(accent_hex, title, metrics, pstyles):
     """metrics: list of (label, disp_val, disp_tgt, val_float, target_float)"""
     rows = [[Paragraph(title.upper(), pstyles["card_title"]), ""]]
@@ -1500,7 +1521,7 @@ def _pdf_dark_card(accent_hex, title, metrics, pstyles):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor(accent_hex)),
         ("SPAN", (0, 0), (-1, 0)),
     ]
@@ -1509,55 +1530,61 @@ def _pdf_dark_card(accent_hex, title, metrics, pstyles):
         status, status_color = _pdf_status_text(val, target)
         pct = min(_target_progress(val, target), 100.0)
         cell = [
-            Paragraph(label, pstyles["metric_label"]),
+            Paragraph(f'<b>{label}</b>', pstyles["metric_label"]),
             Paragraph(
-                f'<font color="{PDF_TEXT}"><b>{disp_val}</b></font><br/>'
-                f'<font color="{PDF_MUTED}">Target: {disp_tgt}</font><br/>'
+                f'<font color="{PDF_TEXT}"><b>{disp_val}</b></font>  '
+                f'<font color="{PDF_MUTED}">/ {disp_tgt}</font><br/>'
                 f'<font color="{status_color}">{status} ({pct:.0f}%)</font>',
                 pstyles["metric_tgt"],
             ),
         ]
         rows.append(cell)
         style_cmds.append(("LINEABOVE", (0, row_idx), (-1, row_idx), 0.3, rl_colors.HexColor("#2a2a3e")))
-    tbl = Table(rows, colWidths=[4.8 * cm, 3.6 * cm])
+    tbl = Table(rows, colWidths=[4.6 * cm, 3.4 * cm])
     tbl.setStyle(TableStyle(style_cmds))
     return tbl
 
-def _pdf_maps_column(map_entries, pstyles, map_w, map_h):
+def _pdf_aligned_section(map_entries, stat_cards, pstyles, map_width):
     rows = []
-    for label, img_buf in map_entries:
-        rows.append([Paragraph(label, pstyles["map_label"])])
-        rows.append([RLImage(img_buf, width=map_w, height=map_h)])
-        rows.append([Spacer(1, 0.15 * cm)])
-    col = Table(rows, colWidths=[map_w + 0.2 * cm])
-    col.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    for i, (label, img_buf) in enumerate(map_entries):
+        rl_img, img_h = _pdf_rl_image(img_buf, map_width)
+        map_cell = Table([
+            [Paragraph(label, pstyles["map_label"])],
+            [rl_img],
+        ], colWidths=[map_width])
+        map_cell.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+        ]))
+        stat_cell = stat_cards[i] if i < len(stat_cards) else Spacer(1, img_h)
+        rows.append([map_cell, stat_cell])
+    section_tbl = Table(rows, colWidths=[map_width + 0.25 * cm, PDF_STATS_WIDTH])
+    section_tbl.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
-    ]))
-    return col
-
-def _pdf_stats_column(cards, pstyles):
-    rows = [[card] for card in cards]
-    col = Table(rows, colWidths=[8.6 * cm])
-    col.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    return col
-
-def _pdf_section_layout(map_entries, stat_cards, pstyles, map_w, map_h):
-    maps_col = _pdf_maps_column(map_entries, pstyles, map_w, map_h)
-    stats_col = _pdf_stats_column(stat_cards, pstyles)
-    layout = Table([[maps_col, stats_col]], colWidths=[map_w + 0.5 * cm, 8.8 * cm])
-    layout.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
     ]))
-    return layout
+    return section_tbl
+
+def _pdf_section_block(section_title, map_entries, stat_cards, pstyles):
+    header = Paragraph(section_title, pstyles["section"])
+    content = _pdf_aligned_section(map_entries, stat_cards, pstyles, PDF_MAP_WIDTH)
+    block = Table([[header], [content]], colWidths=[PDF_MAP_WIDTH + PDF_STATS_WIDTH + 0.25 * cm])
+    block.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (0, 0), 4),
+        ("BOTTOMPADDING", (0, 1), (0, 1), 0),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+    ]))
+    return block
 
 def generate_season_pdf():
     if not PDF_AVAILABLE:
@@ -1609,7 +1636,6 @@ def generate_season_pdf():
         topMargin=0.8 * cm, bottomMargin=0.8 * cm,
     )
     ps = _pdf_styles()
-    map_w, map_h = 12.5 * cm, 4.2 * cm
 
     pass_maps = [
         ("Pass Map", _pil_to_png_bytes(img_pm)),
@@ -1665,15 +1691,15 @@ def generate_season_pdf():
     ]
 
     story = [
-        Spacer(1, 0.2 * cm),
         Paragraph("Hudson Cicala — Season Dashboard", ps["title"]),
         Paragraph("2026 Season • All Matches Report", ps["sub"]),
-        Spacer(1, 0.3 * cm),
-        Paragraph("Passing Analysis", ps["section"]),
-        _pdf_section_layout(pass_maps, pass_cards, ps, map_w, map_h),
+        Spacer(1, 0.15 * cm),
+        _pdf_section_block("Passing Analysis", pass_maps, pass_cards, ps),
         PageBreak(),
-        Paragraph("Defensive Actions", ps["section"]),
-        _pdf_section_layout(def_maps, def_cards, ps, map_w, map_h),
+        Paragraph("Hudson Cicala — Season Dashboard", ps["title"]),
+        Paragraph("2026 Season • All Matches Report", ps["sub"]),
+        Spacer(1, 0.15 * cm),
+        _pdf_section_block("Defensive Actions", def_maps, def_cards, ps),
     ]
 
     doc.build(story, onFirstPage=_pdf_draw_dark_page, onLaterPages=_pdf_draw_dark_page)
