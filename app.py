@@ -771,28 +771,54 @@ def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
     }
 
 # ── UI HELPERS ─────────────────────────────────────────────────
-def _safe_pct_diff(a: float, b: float) -> float:
-    base = max(abs(b), 1.0)
-    pct = (abs(a - b) / base) * 100.0
-    return min(pct, 999.0)
-
-def _arrow_html(val_game: float, val_avg: float) -> str:
-    if np.isclose(val_game, val_avg, atol=1e-9):
-        return ""
-    if abs(val_game) < 1 and abs(val_avg) < 1:
-        return ""
-    if val_game > val_avg:
-        pct = _safe_pct_diff(val_game, val_avg)
-        return f' <span style="color:#10b981">▲ +{pct:.0f}%</span>'
-    else:
-        pct = _safe_pct_diff(val_avg, val_game)
-        return f' <span style="color:#E07070">▼ -{pct:.0f}%</span>'
+def _target_delta_html(val: float, target: float) -> str:
+    diff = val - target
+    if abs(diff) < 0.05:
+        return '<span style="color:#94a3b8;font-size:10px;font-weight:600">On target</span>'
+    if diff > 0:
+        return f'<span style="color:#22c55e;font-size:10px;font-weight:700">+{abs(diff):.1f} vs target</span>'
+    return f'<span style="color:#f59e0b;font-size:10px;font-weight:700">−{abs(diff):.1f} vs target</span>'
 
 def _accent_rgb(border_color):
     h = border_color.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
-def _modern_card(title, border_color, items, comparison=False):
+def _rand_target(base: float, key: str, is_pct: bool = False, decimals: int = 1) -> float:
+    """Generate a stable pseudo-random target slightly above or below Hudson's baseline."""
+    rng = np.random.default_rng(2026 + (hash(key) % 10000))
+    sign = int(rng.choice([-1, 1]))
+    if is_pct:
+        target = float(np.clip(base + sign * rng.uniform(2.0, 8.5), 0.0, 100.0))
+    elif base == 0:
+        target = round(rng.uniform(0.5, 2.5), decimals)
+        return target
+    else:
+        target = max(0.0, base + sign * base * rng.uniform(0.06, 0.16))
+    return round(target, decimals)
+
+def build_metric_targets(pass_base: dict, def_base: dict) -> dict:
+    return {
+        "total_p90": _rand_target(pass_base["total_p90"], "total_p90"),
+        "accuracy_pct": _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
+        "advanced_passes_p90": _rand_target(pass_base["advanced_passes_p90"], "advanced_passes_p90"),
+        "advanced_accuracy_pct": _rand_target(pass_base["advanced_accuracy_pct"], "advanced_accuracy_pct", is_pct=True),
+        "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
+        "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
+        "total_actions_p90": _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
+        "actions_own_p90": _rand_target(def_base["actions_own_p90"], "actions_own_p90"),
+        "duels_p90": _rand_target(def_base["duels_p90"], "duels_p90"),
+        "duels_won_pct": _rand_target(def_base["duels_won_pct"], "duels_won_pct", is_pct=True),
+        "interceptions_p90": _rand_target(def_base["interceptions_p90"], "interceptions_p90"),
+        "funnel_actions_p90": _rand_target(def_base["funnel_actions_p90"], "funnel_actions_p90"),
+        "funnel_success_pct": _rand_target(def_base["funnel_success_pct"], "funnel_success_pct", is_pct=True),
+    }
+
+def _target_progress(val: float, target: float) -> float:
+    if target <= 0:
+        return 100.0 if val >= 0 else 0.0
+    return float(np.clip((val / target) * 100.0, 0.0, 130.0))
+
+def _target_card_shell(title, border_color, body_html):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
     grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.18) 0%, "
@@ -810,45 +836,108 @@ def _modern_card(title, border_color, items, comparison=False):
     html += (f'<span style="font-size:12px;font-weight:700;letter-spacing:1.1px;'
              f'text-transform:uppercase;color:#eef1f7">{title}</span>')
     html += '</div>'
-    for idx, item in enumerate(items):
-        if comparison:
-            val_game, val_avg = item[1], item[2]
-            value_html = item[3] if len(item) > 3 else str(val_game)
-            disp_avg = item[4] if len(item) > 4 else str(val_avg)
-            tooltip = item[5] if len(item) > 5 else ""
-            extra = item[6] if len(item) > 6 else ""
-            arrow = _arrow_html(float(val_game), float(val_avg))
-            sub_lines = [f"AVG {disp_avg}"]
-            if extra:
-                sub_lines.append(extra)
-        else:
-            value_html = item[1]
-            tooltip = item[3] if len(item) > 3 else ""
-            arrow = ""
-            sub_lines = [item[2]] if len(item) > 2 and item[2] else []
-        label = item[0]
-        is_last = idx == len(items) - 1
-        row_style = "" if is_last else ("margin-bottom:12px;padding-bottom:12px;"
-                                        "border-bottom:1px solid rgba(255,255,255,0.07)")
-        title_attr = f' title="{tooltip}"' if tooltip else ""
-        cursor = "cursor:help;" if tooltip else ""
-        html += f'<div style="{row_style}">'
-        html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">'
-        html += (f'<span style="font-size:13px;font-weight:600;color:#c7cdda;{cursor}"{title_attr}>{label}</span>')
-        html += (f'<span style="font-size:22px;font-weight:800;color:#ffffff;line-height:1.1;'
-                 f'white-space:nowrap">{value_html}{arrow}</span>')
-        html += '</div>'
-        for sl in sub_lines:
-            html += f'<div style="text-align:right;font-size:11px;color:#8b93a7;margin-top:3px">{sl}</div>'
-        html += '</div>'
+    html += body_html
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def section_card(title, border_color, items):
-    _modern_card(title, border_color, items, comparison=False)
+def _target_card_style_a(title, border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        pct = _target_progress(val, target)
+        bar_pct = min(pct, 100.0)
+        bar_color = "#22c55e" if val >= target else "#3b82f6" if pct >= 75 else "#f59e0b"
+        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
+        body += f'<div style="{sep}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
+        body += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
+        body += f'<span style="font-size:24px;font-weight:800;color:#ffffff">{disp_val}</span>'
+        body += f'<span style="font-size:11px;color:#8b93a7">Target <b style="color:#eef1f7">{disp_tgt}</b></span>'
+        body += '</div>'
+        body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
+                 f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
+        body += f'<div style="display:flex;justify-content:space-between;margin-top:5px">{_target_delta_html(val, target)}'
+        body += f'<span style="color:#64748b;font-size:10px">{min(pct, 100):.0f}% of target</span></div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
+        body += '</div>'
+    _target_card_shell(title, border_color, body)
 
-def cmp_section_card(title, border_color, items):
-    _modern_card(title, border_color, items, comparison=True)
+def _target_card_style_b(title, border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgba({r},{g},{b},0.85)"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        status = "Above target" if val >= target else "Below target"
+        status_color = "#22c55e" if val >= target else "#f59e0b"
+        sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
+        body += f'<div style="{sep}">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += (f'<div style="display:flex;border-radius:12px;overflow:hidden;'
+                 f'border:1px solid rgba({r},{g},{b},0.25);background:rgba(0,0,0,0.20)">')
+        body += ('<div style="flex:1;padding:12px 10px;text-align:center">'
+                 '<div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8">HUDSON</div>'
+                 f'<div style="font-size:26px;font-weight:800;color:#ffffff;line-height:1.1;margin-top:4px">{disp_val}</div></div>')
+        body += f'<div style="width:1px;background:rgba(255,255,255,0.10)"></div>'
+        body += (f'<div style="flex:1;padding:12px 10px;text-align:center;background:rgba({r},{g},{b},0.12)">'
+                 f'<div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:{accent}">TARGET</div>'
+                 f'<div style="font-size:26px;font-weight:800;color:{accent};line-height:1.1;margin-top:4px">{disp_tgt}</div></div>')
+        body += '</div>'
+        body += f'<div style="text-align:center;margin-top:6px"><span style="color:{status_color};font-size:10px;font-weight:700">{status}</span></div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center">{extra}</div>'
+        body += '</div>'
+    _target_card_shell(title, border_color, body)
+
+def _target_card_style_c(title, border_color, items):
+    r, g, b = _accent_rgb(border_color)
+    accent = f"rgb({r},{g},{b})"
+    body = ""
+    for idx, item in enumerate(items):
+        label, val, target = item[0], float(item[1]), float(item[2])
+        disp_val, disp_tgt = item[3], item[4]
+        extra = item[5] if len(item) > 5 else ""
+        pct = min(_target_progress(val, target), 100.0)
+        ring_color = "#22c55e" if val >= target else accent
+        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
+        body += f'<div style="{sep}">'
+        body += '<div style="display:flex;align-items:center;gap:10px">'
+        body += (f'<div style="width:46px;height:46px;border-radius:50%;flex-shrink:0;'
+                 f'background:conic-gradient({ring_color} {pct:.1f}%, rgba(255,255,255,0.08) 0);'
+                 f'display:flex;align-items:center;justify-content:center">'
+                 f'<div style="width:34px;height:34px;border-radius:50%;background:#14141f;'
+                 f'display:flex;align-items:center;justify-content:center;'
+                 f'font-size:9px;font-weight:800;color:#ffffff">{pct:.0f}%</div></div>')
+        body += '<div style="flex:1;min-width:0">'
+        body += f'<div style="font-size:12px;font-weight:600;color:#c7cdda;margin-bottom:4px">{label}</div>'
+        body += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+        body += (f'<span style="font-size:20px;font-weight:800;color:#ffffff;background:rgba({r},{g},{b},0.18);'
+                 f'border:1px solid rgba({r},{g},{b},0.35);border-radius:999px;padding:2px 12px">{disp_val}</span>')
+        body += (f'<span style="font-size:11px;font-weight:700;color:{accent};background:rgba({r},{g},{b},0.10);'
+                 f'border:1px dashed rgba({r},{g},{b},0.45);border-radius:999px;padding:4px 10px">'
+                 f'Target {disp_tgt}</span>')
+        body += '</div>'
+        body += f'<div style="margin-top:4px">{_target_delta_html(val, target)}</div>'
+        if extra:
+            body += f'<div style="font-size:10px;color:#64748b;margin-top:3px">{extra}</div>'
+        body += '</div></div></div>'
+    _target_card_shell(title, border_color, body)
+
+TARGET_CARD_STYLES = {
+    "A — Progress Bar": _target_card_style_a,
+    "B — Side by Side": _target_card_style_b,
+    "C — Gauge Pill": _target_card_style_c,
+}
+
+def target_section_card(title, border_color, items, style_key):
+    renderer = TARGET_CARD_STYLES.get(style_key, _target_card_style_a)
+    renderer(title, border_color, items)
 
 # ── DRAW HELPERS (PITCH) ───────────────────────────────────────
 def _base_pitch(bg="#1a1a2e"):
@@ -1259,8 +1348,40 @@ else:
         )
         st.sidebar.caption("All Matches • Passes & Defensive Actions")
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("#### Stats Card Style")
+CARD_STYLE = st.sidebar.radio(
+    "Choose visual layout",
+    options=list(TARGET_CARD_STYLES.keys()),
+    index=0,
+    help="Compare 3 designs showing Hudson's value vs target for each metric.",
+)
+
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
+def_all_stats = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
+
+_pass_base = {}
+if num_matches > 0:
+    for k in all_match_stats[0].keys():
+        if isinstance(all_match_stats[0][k], (int, float)):
+            _pass_base[k] = sum(s[k] for s in all_match_stats) / num_matches
+
+_def_base = {}
+if len(def_all_stats) > 0:
+    for k in def_all_stats[0].keys():
+        if isinstance(def_all_stats[0][k], (int, float)):
+            _def_base[k] = sum(s[k] for s in def_all_stats) / len(def_all_stats)
+
+METRIC_TARGETS = build_metric_targets(_pass_base, _def_base)
+T = METRIC_TARGETS
+
+with st.sidebar.expander("Season targets (reference)"):
+    _tgt_rows = []
+    for _k, _v in T.items():
+        _base = _pass_base.get(_k, _def_base.get(_k, 0))
+        _tgt_rows.append({"Metric": _k, "Hudson AVG": round(_base, 2), "Target": _v})
+    st.dataframe(pd.DataFrame(_tgt_rows), hide_index=True, use_container_width=True)
 
 # ── LAYOUT ─────────────────────────────────────────────────────
 tab_dash, = st.tabs(["Detailed Dashboard"])
@@ -1342,42 +1463,27 @@ with tab_dash:
         col_s1, col_s2, col_s3 = st.columns(3)
         total_impact_value = float(df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
 
-        if force_avg:
-            with col_s1:
-                section_card("Overview", PASS_TONES[0], [
-                    ("Total Passes (AVG)", f"{s_game['total_p90']:.1f}"),
-                    ("% Accuracy", f"{s_game['accuracy_pct']:.1f}%"),
-                ])
-            with col_s2:
-                section_card("Advanced", PASS_TONES[1], [
-                    ("Advanced Passes (AVG)", f"{s_game['advanced_passes_p90']:.1f}"),
-                    ("% Advanced Accuracy", f"{s_game['advanced_accuracy_pct']:.1f}%"),
-                ])
-            with col_s3:
-                section_card("Impact", PASS_TONES[2], [
-                    ("Pass Impact Value (AVG)", f"{s_game['xt_p90']:.1f}", f"Total: {total_impact_value:.3f}"),
-                    ("% Positive Impact", f"{s_game['pos_pct']:.1f}%"),
-                ])
-        else:
-            with col_s1:
-                cmp_section_card("Overview", PASS_TONES[0], [
-                    ("Total Passes (AVG)", s_game["total_p90"], f"{s_avg['total_p90']:.1f}"),
-                    ("% Accuracy", s_game["accuracy_pct"], s_avg["accuracy_pct"],
-                     f"{s_game['accuracy_pct']:.1f}%", f"{s_avg['accuracy_pct']:.1f}%"),
-                ])
-            with col_s2:
-                cmp_section_card("Advanced", PASS_TONES[1], [
-                    ("Advanced Passes (AVG)", s_game["advanced_passes_p90"], f"{s_avg['advanced_passes_p90']:.1f}"),
-                    ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], s_avg["advanced_accuracy_pct"],
-                     f"{s_game['advanced_accuracy_pct']:.1f}%", f"{s_avg['advanced_accuracy_pct']:.1f}%"),
-                ])
-            with col_s3:
-                cmp_section_card("Impact", PASS_TONES[2], [
-                    ("Pass Impact Value (AVG)", s_game["xt_p90"], s_avg["xt_p90"],
-                     f"{s_game['xt_p90']:.1f}", f"{s_avg['xt_p90']:.1f}", "", f"Total: {total_impact_value:.3f}"),
-                    ("% Positive Impact", s_game["pos_pct"], s_avg["pos_pct"],
-                     f"{s_game['pos_pct']:.1f}%", f"{s_avg['pos_pct']:.1f}%"),
-                ])
+        with col_s1:
+            target_section_card("Overview", PASS_TONES[0], [
+                ("Total Passes (AVG)", s_game["total_p90"], T["total_p90"],
+                 f"{s_game['total_p90']:.1f}", f"{T['total_p90']:.1f}"),
+                ("% Accuracy", s_game["accuracy_pct"], T["accuracy_pct"],
+                 f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
+            ], CARD_STYLE)
+        with col_s2:
+            target_section_card("Advanced", PASS_TONES[1], [
+                ("Advanced Passes (AVG)", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
+                 f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
+                ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
+                 f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
+            ], CARD_STYLE)
+        with col_s3:
+            target_section_card("Impact", PASS_TONES[2], [
+                ("Pass Impact Value (AVG)", s_game["xt_p90"], T["xt_p90"],
+                 f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}", f"Total: {total_impact_value:.3f}"),
+                ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
+                 f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
+            ], CARD_STYLE)
 
     # ═══════════════════════════════════════════════════════════
     # DEFENSIVE ACTIONS TAB
@@ -1442,41 +1548,27 @@ with tab_dash:
         st.markdown("<hr style='margin:8px 0;opacity:0.2'>", unsafe_allow_html=True)
 
         # ── DEFENSIVE STATS CARDS ─────────────────────────────
-        col_ds1,col_ds2,col_ds3=st.columns(3)
-        if force_avg_def:
-            with col_ds1:
-                section_card("Overview", DEF_TONES[0], [
-                    ("Defensive Actions (AVG)", f"{d_game['total_actions_p90']:.1f}"),
-                    ("Actions in Own Half (AVG)", f"{d_game['actions_own_p90']:.1f}"),
-                ])
-            with col_ds2:
-                section_card("Duels & Interceptions", DEF_TONES[1], [
-                    ("Defensive Duels (AVG)", f"{d_game['duels_p90']:.1f}"),
-                    ("% Duels Won", f"{d_game['duels_won_pct']:.1f}%"),
-                    ("Interceptions (AVG)", f"{d_game['interceptions_p90']:.1f}"),
-                ])
-            with col_ds3:
-                section_card("Funnel Protection", DEF_TONES[2], [
-                    ("Funnel Protection Actions (AVG)", f"{d_game['funnel_actions_p90']:.1f}"),
-                    ("% FPA Successful", f"{d_game['funnel_success_pct']:.1f}%"),
-                ])
-        else:
-            with col_ds1:
-                cmp_section_card("Overview", DEF_TONES[0], [
-                    ("Defensive Actions (AVG)", d_game["total_actions_p90"], f"{d_avg['total_actions_p90']:.1f}"),
-                    ("Actions in Own Half (AVG)", d_game["actions_own_p90"], f"{d_avg['actions_own_p90']:.1f}"),
-                ])
-            with col_ds2:
-                cmp_section_card("Duels & Interceptions", DEF_TONES[1], [
-                    ("Defensive Duels (AVG)", d_game["duels_p90"], f"{d_avg['duels_p90']:.1f}"),
-                    ("% Duels Won", d_game["duels_won_pct"], d_avg["duels_won_pct"],
-                     f"{d_game['duels_won_pct']:.1f}%", f"{d_avg['duels_won_pct']:.1f}%"),
-                    ("Interceptions (AVG)", d_game["interceptions_p90"], d_avg["interceptions_p90"],
-                     f"{d_game['interceptions_p90']:.1f}", f"{d_avg['interceptions_p90']:.1f}"),
-                ])
-            with col_ds3:
-                cmp_section_card("Funnel Protection", DEF_TONES[2], [
-                    ("Funnel Protection Actions (AVG)", d_game["funnel_actions_p90"], f"{d_avg['funnel_actions_p90']:.1f}"),
-                    ("% FPA Successful", d_game["funnel_success_pct"], d_avg["funnel_success_pct"],
-                     f"{d_game['funnel_success_pct']:.1f}%", f"{d_avg['funnel_success_pct']:.1f}%"),
-                ])
+        col_ds1, col_ds2, col_ds3 = st.columns(3)
+        with col_ds1:
+            target_section_card("Overview", DEF_TONES[0], [
+                ("Defensive Actions (AVG)", d_game["total_actions_p90"], T["total_actions_p90"],
+                 f"{d_game['total_actions_p90']:.1f}", f"{T['total_actions_p90']:.1f}"),
+                ("Actions in Own Half (AVG)", d_game["actions_own_p90"], T["actions_own_p90"],
+                 f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
+            ], CARD_STYLE)
+        with col_ds2:
+            target_section_card("Duels & Interceptions", DEF_TONES[1], [
+                ("Defensive Duels (AVG)", d_game["duels_p90"], T["duels_p90"],
+                 f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
+                ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
+                 f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
+                ("Interceptions (AVG)", d_game["interceptions_p90"], T["interceptions_p90"],
+                 f"{d_game['interceptions_p90']:.1f}", f"{T['interceptions_p90']:.1f}"),
+            ], CARD_STYLE)
+        with col_ds3:
+            target_section_card("Funnel Protection", DEF_TONES[2], [
+                ("Funnel Protection Actions (AVG)", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
+                 f"{d_game['funnel_actions_p90']:.1f}", f"{T['funnel_actions_p90']:.1f}"),
+                ("% FPA Successful", d_game["funnel_success_pct"], T["funnel_success_pct"],
+                 f"{d_game['funnel_success_pct']:.1f}%", f"{T['funnel_success_pct']:.1f}%"),
+            ], CARD_STYLE)
