@@ -778,6 +778,39 @@ CARD_SUBTEXT = "13px"
 CARD_CAPTION = "12px"
 CARD_BADGE_TEXT = "12px"
 
+def _lerp_channel(a: int, b: int, t: float) -> int:
+    return int(round(a + (b - a) * max(0.0, min(1.0, t))))
+
+def _lerp_hex(hex_a: str, hex_b: str, t: float) -> str:
+    ha, hb = hex_a.lstrip("#"), hex_b.lstrip("#")
+    r = _lerp_channel(int(ha[0:2], 16), int(hb[0:2], 16), t)
+    g = _lerp_channel(int(ha[2:4], 16), int(hb[2:4], 16), t)
+    b = _lerp_channel(int(ha[4:6], 16), int(hb[4:6], 16), t)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+C_GREEN_LIGHT = "#86efac"
+C_GREEN_STRONG = "#15803d"
+C_ORANGE_LIGHT = "#fdba74"
+C_RED_DARK = "#7f1d1d"
+C_NEUTRAL = "#94a3b8"
+
+def _diff_gradient_color(diff_pct: float) -> tuple:
+    """Gradient color for diff % and status labels."""
+    if abs(diff_pct) < 0.5:
+        return C_NEUTRAL, "rgba(148,163,184,0.15)"
+    if diff_pct > 0:
+        t = min(diff_pct / 15.0, 1.0)
+        color = _lerp_hex(C_GREEN_LIGHT, C_GREEN_STRONG, t)
+        return color, _hex_to_rgba(color, 0.18)
+    t = min(abs(diff_pct) / 15.0, 1.0)
+    color = _lerp_hex(C_ORANGE_LIGHT, C_RED_DARK, t)
+    return color, _hex_to_rgba(color, 0.18)
+
 def _target_pct_diff(val: float, target: float) -> float:
     if target <= 0:
         return 0.0
@@ -786,18 +819,16 @@ def _target_pct_diff(val: float, target: float) -> float:
 def _target_diff_badge_html(val: float, target: float) -> str:
     diff_pct = _target_pct_diff(val, target)
     if abs(diff_pct) < 0.5:
-        color, bg = "#94a3b8", "rgba(148,163,184,0.15)"
         text = "0%"
     elif diff_pct > 0:
-        color, bg = "#22c55e", "rgba(34,197,94,0.18)"
         text = f"+{diff_pct:.0f}%"
     else:
-        color, bg = "#ef4444", "rgba(239,68,68,0.18)"
         text = f"{diff_pct:.0f}%"
+    color, bg = _diff_gradient_color(diff_pct)
     return (
         f'<span style="display:inline-block;padding:3px 9px;border-radius:7px;'
         f'font-size:{CARD_BADGE_TEXT};font-weight:700;color:{color};'
-        f'background:{bg};border:1px solid {color}44">{text}</span>'
+        f'background:{bg};border:1px solid {color}55">{text}</span>'
     )
 
 def _target_delta_html(val: float, target: float) -> str:
@@ -844,12 +875,14 @@ def _target_progress(val: float, target: float) -> float:
 
 def _kpi_status(val: float, target: float) -> tuple:
     """Return (status_key, label, color) — hit, close, or miss vs target."""
+    diff_pct = _target_pct_diff(val, target)
+    color, _ = _diff_gradient_color(diff_pct)
     pct = _target_progress(val, target)
     if val >= target:
-        return "hit", "Target Hit", "#22c55e"
+        return "hit", "Target Hit", color
     if pct >= 85.0:
-        return "close", "Close to Target", "#f59e0b"
-    return "miss", "Below Target", "#ef4444"
+        return "close", "Close to Target", color
+    return "miss", "Below Target", color
 
 def _item_sep(idx, total):
     return "" if idx == total - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
@@ -927,7 +960,7 @@ def _body_target_b(border_color, items):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_tgt = item[4]
         status = "Above target" if val >= target else "Below target"
-        status_color = "#22c55e" if val >= target else "#f59e0b"
+        status_color, _ = _diff_gradient_color(_target_pct_diff(val, target))
         sep = "" if idx == len(items) - 1 else "margin-bottom:10px;"
         body += f'<div style="{sep}">'
         body += _body_target_row_header(
@@ -1078,7 +1111,7 @@ def _target_card_style_b(title, border_color, items, layout="combined"):
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
         status = "Above target" if val >= target else "Below target"
-        status_color = "#22c55e" if val >= target else "#f59e0b"
+        status_color, _ = _diff_gradient_color(_target_pct_diff(val, target))
         sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
         body += f'<div style="{sep}">'
         body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
@@ -1507,23 +1540,20 @@ def _pdf_styles():
     }
 
 def _pdf_status_text(val, target):
+    diff_pct = _target_pct_diff(val, target)
+    color, _ = _diff_gradient_color(diff_pct)
     pct = _target_progress(val, target)
     if val >= target:
-        return "Target Hit", "#22c55e"
+        return "Target Hit", color
     if pct >= 85.0:
-        return "Close to Target", "#f59e0b"
-    return "Below Target", "#ef4444"
+        return "Close to Target", color
+    return "Below Target", color
 
-PDF_MAP_WIDTH = 6.2 * cm
-PDF_STATS_WIDTH = 8.6 * cm
-PDF_MAP_ROW_STYLE = [
-    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ("TOPPADDING", (0, 0), (-1, -1), 2),
-    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-    ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
-]
+def _pdf_usable_width():
+    return landscape(A4)[0] - 2.0 * cm
+
+def _pdf_col_width(n_cols: int = 3, gap_cm: float = 0.15):
+    return (_pdf_usable_width() - gap_cm * cm * (n_cols - 1)) / n_cols
 
 def _pdf_rl_image(img_buf, target_width):
     img_buf.seek(0)
@@ -1537,13 +1567,18 @@ def _pdf_rl_image(img_buf, target_width):
 def _pdf_diff_badge_text(val, target):
     diff_pct = _target_pct_diff(val, target)
     if abs(diff_pct) < 0.5:
-        return "0%", "#94a3b8"
-    if diff_pct > 0:
-        return f"+{diff_pct:.0f}%", "#22c55e"
-    return f"{diff_pct:.0f}%", "#ef4444"
+        text = "0%"
+    elif diff_pct > 0:
+        text = f"+{diff_pct:.0f}%"
+    else:
+        text = f"{diff_pct:.0f}%"
+    color, _ = _diff_gradient_color(diff_pct)
+    return text, color
 
-def _pdf_dark_card(accent_hex, title, metrics, pstyles):
+def _pdf_dark_card(accent_hex, title, metrics, pstyles, card_width):
     """metrics: list of (label, disp_val, disp_tgt, val_float, target_float)"""
+    label_w = card_width * 0.56
+    val_w = card_width * 0.44
     rows = [[Paragraph(title.upper(), pstyles["card_title"]), ""]]
     row_idx = 0
     style_cmds = [
@@ -1551,8 +1586,8 @@ def _pdf_dark_card(accent_hex, title, metrics, pstyles):
         ("BOX", (0, 0), (-1, -1), 0.8, rl_colors.HexColor(accent_hex)),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor(accent_hex)),
         ("SPAN", (0, 0), (-1, 0)),
@@ -1571,37 +1606,56 @@ def _pdf_dark_card(accent_hex, title, metrics, pstyles):
         ]
         rows.append(cell)
         style_cmds.append(("LINEABOVE", (0, row_idx), (-1, row_idx), 0.3, rl_colors.HexColor("#2a2a3e")))
-    tbl = Table(rows, colWidths=[4.6 * cm, 3.4 * cm])
+    tbl = Table(rows, colWidths=[label_w, val_w])
     tbl.setStyle(TableStyle(style_cmds))
     return tbl
 
-def _pdf_map_row(label, img_buf, stat_card, pstyles):
-    rl_img, _ = _pdf_rl_image(img_buf, PDF_MAP_WIDTH)
-    map_stack = Table([
+def _pdf_map_cell(label, img_buf, pstyles, col_width):
+    rl_img, _ = _pdf_rl_image(img_buf, col_width)
+    cell = Table([
         [Paragraph(label, pstyles["map_label"])],
         [rl_img],
-    ], colWidths=[PDF_MAP_WIDTH])
-    map_stack.setStyle(TableStyle([
+    ], colWidths=[col_width])
+    cell.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
     ]))
-    row_tbl = Table([[map_stack, stat_card]], colWidths=[PDF_MAP_WIDTH + 0.15 * cm, PDF_STATS_WIDTH])
-    row_tbl.setStyle(TableStyle(PDF_MAP_ROW_STYLE))
-    return row_tbl
+    return cell
 
-def _pdf_section_flowables(section_title, map_entries, stat_cards, pstyles):
-    flowables = [
+def _pdf_dashboard_section(section_title, map_entries, stat_cards, pstyles):
+    col_w = _pdf_col_width(3)
+    map_cells = [_pdf_map_cell(label, buf, pstyles, col_w) for label, buf in map_entries]
+    maps_row = Table([map_cells], colWidths=[col_w] * 3, hAlign="LEFT")
+    maps_row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-2, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+    ]))
+    cards_row = Table([stat_cards], colWidths=[col_w] * 3, hAlign="LEFT")
+    cards_row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-2, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
+    ]))
+    return [
         Paragraph(section_title, pstyles["section"]),
-        Spacer(1, 0.06 * cm),
+        maps_row,
+        Spacer(1, 0.12 * cm),
+        cards_row,
     ]
-    for i, (label, img_buf) in enumerate(map_entries):
-        stat_card = stat_cards[i] if i < len(stat_cards) else Spacer(1, 0.1 * cm)
-        flowables.append(_pdf_map_row(label, img_buf, stat_card, pstyles))
-    return flowables
 
 def generate_season_pdf():
     if not PDF_AVAILABLE:
@@ -1653,6 +1707,7 @@ def generate_season_pdf():
         topMargin=0.8 * cm, bottomMargin=0.8 * cm,
     )
     ps = _pdf_styles()
+    col_w = _pdf_col_width(3)
 
     pass_maps = [
         ("Pass Map", _pil_to_png_bytes(img_pm)),
@@ -1665,20 +1720,20 @@ def generate_season_pdf():
              s_pass["total_p90"], T_pdf["total_p90"]),
             ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
              s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
-        ], ps),
+        ], ps, col_w),
         _pdf_dark_card(PASS_TONES[1], "Advanced", [
             ("Advanced Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
              s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
             ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
              s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
-        ], ps),
+        ], ps, col_w),
         _pdf_dark_card(PASS_TONES[2], "Impact", [
             ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
              s_pass["xt_p90"], T_pdf["xt_p90"]),
             ("Total Impact", f"{total_impact:.3f}", "—", total_impact, total_impact),
             ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%", f"{T_pdf['pos_pct']:.1f}%",
              s_pass["pos_pct"], T_pdf["pos_pct"]),
-        ], ps),
+        ], ps, col_w),
     ]
 
     def_maps = [
@@ -1692,19 +1747,19 @@ def generate_season_pdf():
              d_def["total_actions_p90"], T_pdf["total_actions_p90"]),
             ("Actions in Own Half Per Game", f"{d_def['actions_own_p90']:.1f}", f"{T_pdf['actions_own_p90']:.1f}",
              d_def["actions_own_p90"], T_pdf["actions_own_p90"]),
-        ], ps),
+        ], ps, col_w),
         _pdf_dark_card(PASS_TONES[1], "Duels", [
             ("Defensive Duels Per Game", f"{d_def['duels_p90']:.1f}", f"{T_pdf['duels_p90']:.1f}",
              d_def["duels_p90"], T_pdf["duels_p90"]),
             ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%", f"{T_pdf['duels_won_pct']:.1f}%",
              d_def["duels_won_pct"], T_pdf["duels_won_pct"]),
-        ], ps),
+        ], ps, col_w),
         _pdf_dark_card(PASS_TONES[2], "Funnel Protection", [
             ("Funnel Protection Actions Per Game", f"{d_def['funnel_actions_p90']:.1f}",
              f"{T_pdf['funnel_actions_p90']:.1f}", d_def["funnel_actions_p90"], T_pdf["funnel_actions_p90"]),
             ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%", f"{T_pdf['funnel_success_pct']:.1f}%",
              d_def["funnel_success_pct"], T_pdf["funnel_success_pct"]),
-        ], ps),
+        ], ps, col_w),
     ]
 
     story = [
@@ -1712,12 +1767,12 @@ def generate_season_pdf():
         Paragraph("2026 Season • All Matches Report", ps["sub"]),
         Spacer(1, 0.08 * cm),
     ]
-    story.extend(_pdf_section_flowables("Passing Analysis", pass_maps, pass_cards, ps))
+    story.extend(_pdf_dashboard_section("Passing Analysis", pass_maps, pass_cards, ps))
     story.append(PageBreak())
     story.append(Paragraph("Hudson Cicala — Season Dashboard", ps["title"]))
     story.append(Paragraph("2026 Season • All Matches Report", ps["sub"]))
     story.append(Spacer(1, 0.08 * cm))
-    story.extend(_pdf_section_flowables("Defensive Actions", def_maps, def_cards, ps))
+    story.extend(_pdf_dashboard_section("Defensive Actions", def_maps, def_cards, ps))
 
     doc.build(story, onFirstPage=_pdf_draw_dark_page, onLaterPages=_pdf_draw_dark_page)
     buf.seek(0)
