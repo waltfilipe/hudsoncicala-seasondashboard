@@ -1412,8 +1412,19 @@ def build_target_card_html(title, border_color, items, style_key, layout_mode="c
         f'</head><body><div id="card-export-root">{inner}</div></body></html>'
     )
 
+def _find_chromium_executable() -> str | None:
+    """Locate a headless Chromium/Chrome binary (Streamlit Cloud uses /usr/bin/chromium)."""
+    candidates = [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/local/bin/google-chrome",
+    ]
+    return next((p for p in candidates if os.path.isfile(p)), None)
+
 def _screenshot_html_png(html: str) -> bytes | None:
-    """Render dashboard card HTML to PNG (pixel-accurate). Playwright first, html2image fallback."""
+    """Render dashboard card HTML to PNG (pixel-accurate). Playwright if available, else html2image."""
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
         f.write(html)
         path = f.name
@@ -1435,13 +1446,9 @@ def _screenshot_html_png(html: str) -> bytes | None:
             pass
         try:
             from html2image import Html2Image
-            chrome_paths = [
-                "/usr/local/bin/google-chrome",
-                "/usr/bin/google-chrome",
-                "/usr/bin/chromium-browser",
-                "/usr/bin/chromium",
-            ]
-            chrome_exe = next((p for p in chrome_paths if os.path.isfile(p)), None)
+            chrome_exe = _find_chromium_executable()
+            if not chrome_exe:
+                raise FileNotFoundError("No Chromium/Chrome binary found")
             user_dir = tempfile.mkdtemp()
             flags = [
                 "--no-sandbox",
