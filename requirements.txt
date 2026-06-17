@@ -9,3 +9,5 @@ plotly
 mplcursors
 reportlab
 openpyxl
+playwright
+html2image
