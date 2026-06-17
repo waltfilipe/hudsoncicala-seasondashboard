@@ -883,11 +883,25 @@ def load_benchmark_targets(source: str) -> dict | None:
     def_actions = (
         df["Defensive duels per 90"].fillna(0) + df["Interceptions per 90"].fillna(0)
     )
+    prog_p90 = df["Progressive passes per 90"].fillna(0)
+    f3_p90 = df["Passes to final third per 90"].fillna(0)
+    prog_acc = df["Accurate progressive passes, %"].fillna(0)
+    f3_acc = df["Accurate passes to final third, %"].fillna(0)
+    prog_attempted_p90 = np.where(prog_acc > 0, prog_p90 / (prog_acc / 100.0), 0.0)
+    f3_success_p90 = f3_p90 * (f3_acc / 100.0)
+    advanced_passes_series = prog_p90 + f3_success_p90
+    advanced_attempted_series = prog_attempted_p90 + f3_p90
+    advanced_success_series = prog_p90 + f3_success_p90
+    advanced_accuracy_series = np.where(
+        advanced_attempted_series > 0,
+        advanced_success_series / advanced_attempted_series * 100.0,
+        0.0,
+    )
     return {
         "total_p90": round(float(df["Passes per 90"].mean()), 1),
         "accuracy_pct": round(float(df["Accurate passes, %"].mean()), 1),
-        "advanced_passes_p90": round(float(df["Progressive passes per 90"].mean()), 1),
-        "advanced_accuracy_pct": round(float(df["Accurate progressive passes, %"].mean()), 1),
+        "advanced_passes_p90": round(float(advanced_passes_series.mean()), 1),
+        "advanced_accuracy_pct": round(float(advanced_accuracy_series.mean()), 1),
         "total_actions_p90": round(float(def_actions.mean()), 1),
         "duels_p90": round(float(df["Defensive duels per 90"].mean()), 1),
         "duels_won_pct": round(float(df["Defensive duels won, %"].mean()), 1),
