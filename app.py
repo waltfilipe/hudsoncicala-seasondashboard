@@ -875,25 +875,29 @@ def _target_progress(val: float, target: float) -> float:
     return float(np.clip((val / target) * 100.0, 0.0, 130.0))
 
 def _kpi_status(val: float, target: float) -> tuple:
-    """Return (status_key, label, color) — hit, close, miss, or miss_target vs target."""
+    """Return (status_key, label, color) — exceed, hit, close, miss, or miss_target vs target."""
     diff_pct = _target_pct_diff(val, target)
     color, _ = _diff_gradient_color(diff_pct)
     pct = _target_progress(val, target)
+    if diff_pct < -10.0:
+        return "miss_target", "Miss Target", color
     if val >= target:
+        if diff_pct > 10.0:
+            return "exceed", "Exceed Target", color
         return "hit", "Target Hit", color
     if pct >= 85.0:
         return "close", "Close to Target", color
-    if pct < 10.0:
-        return "miss_target", "Miss Target", color
     return "miss", "Below Target", color
 
 def _kpi_icon(status_key: str) -> str:
+    if status_key == "exceed":
+        return "✓"
     if status_key == "hit":
         return "✓"
     if status_key == "close":
         return "~"
     if status_key == "miss_target":
-        return "✗"
+        return "X"
     return "−"
 
 def _metric_gradient_color(val: float, target: float) -> str:
@@ -1569,12 +1573,14 @@ def _pdf_status_text(val, target):
     diff_pct = _target_pct_diff(val, target)
     color, _ = _diff_gradient_color(diff_pct)
     pct = _target_progress(val, target)
+    if diff_pct < -10.0:
+        return "Miss Target", color
     if val >= target:
+        if diff_pct > 10.0:
+            return "Exceed Target", color
         return "Target Hit", color
     if pct >= 85.0:
         return "Close to Target", color
-    if pct < 10.0:
-        return "Miss Target", color
     return "Below Target", color
 
 def _pdf_usable_width():
@@ -1700,7 +1706,6 @@ def generate_season_pdf(card_tones=None):
             s_pass[k] = sum(s[k] for s in pass_stats_list) / len(pass_stats_list)
         else:
             s_pass[k] = 0
-    total_impact = float(df_pass.loc[df_pass["is_won"], "delta_xt_adj"].sum())
 
     def_all = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
     d_def = {}
@@ -1757,7 +1762,7 @@ def generate_season_pdf(card_tones=None):
              s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
         ], ps, col_w),
         _pdf_dark_card(tones[2], "Impact", [
-            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f} ({total_impact:.1f})", f"{T_pdf['xt_p90']:.1f}",
+            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
              s_pass["xt_p90"], T_pdf["xt_p90"]),
             ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%", f"{T_pdf['pos_pct']:.1f}%",
              s_pass["pos_pct"], T_pdf["pos_pct"]),
@@ -1972,7 +1977,6 @@ with tab_dash:
 
         # ── STATS CARDS ───────────────────────────────────────
         col_s1, col_s2, col_s3 = st.columns(3)
-        total_impact_value = float(df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
 
         with col_s1:
             target_section_card("Overview", ACTIVE_CARD_TONES[0], [
@@ -1991,7 +1995,7 @@ with tab_dash:
         with col_s3:
             target_section_card("Impact", ACTIVE_CARD_TONES[2], [
                 ("Pass Impact Value Per Game", s_game["xt_p90"], T["xt_p90"],
-                 f"{s_game['xt_p90']:.1f} ({total_impact_value:.1f})", f"{T['xt_p90']:.1f}"),
+                 f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}"),
                 ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
                  f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
