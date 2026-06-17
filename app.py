@@ -852,18 +852,58 @@ def _rand_target(base: float, key: str, is_pct: bool = False, decimals: int = 1)
         target = max(0.0, base + sign * base * rng.uniform(0.06, 0.16))
     return round(target, decimals)
 
-def build_metric_targets(pass_base: dict, def_base: dict) -> dict:
+BENCHMARK_POSITIONS = ("RDMF", "RCMF", "LDMF", "LCMF", "DMF")
+BENCHMARK_FILES = {"MLS": "MLS 1.xlsx", "TOP 5 - UE": "TOP 5 - UE.xlsx"}
+BENCHMARK_MINUTES_RATIO = 0.50
+
+@st.cache_data(show_spinner=False)
+def load_benchmark_targets(source: str) -> dict | None:
+    """Mean per-90 benchmarks from Wyscout export for selected midfield positions."""
+    filename = BENCHMARK_FILES.get(source)
+    if not filename:
+        return None
+    path = Path(filename)
+    if not path.exists():
+        return None
+    df = pd.read_excel(path)
+    if "Position" not in df.columns or "Minutes played" not in df.columns:
+        return None
+    df = df[df["Position"].isin(BENCHMARK_POSITIONS)].copy()
+    max_mins = float(df["Minutes played"].max()) if len(df) else 0.0
+    if max_mins <= 0:
+        return None
+    min_mins = max_mins * BENCHMARK_MINUTES_RATIO
+    df = df[df["Minutes played"] >= min_mins]
+    if df.empty:
+        return None
+    def_actions = (
+        df["Defensive duels per 90"].fillna(0) + df["Interceptions per 90"].fillna(0)
+    )
     return {
-        "total_p90": _rand_target(pass_base["total_p90"], "total_p90"),
-        "accuracy_pct": _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
-        "advanced_passes_p90": _rand_target(pass_base["advanced_passes_p90"], "advanced_passes_p90"),
-        "advanced_accuracy_pct": _rand_target(pass_base["advanced_accuracy_pct"], "advanced_accuracy_pct", is_pct=True),
+        "total_p90": round(float(df["Passes per 90"].mean()), 1),
+        "accuracy_pct": round(float(df["Accurate passes, %"].mean()), 1),
+        "advanced_passes_p90": round(float(df["Progressive passes per 90"].mean()), 1),
+        "advanced_accuracy_pct": round(float(df["Accurate progressive passes, %"].mean()), 1),
+        "total_actions_p90": round(float(def_actions.mean()), 1),
+        "duels_p90": round(float(df["Defensive duels per 90"].mean()), 1),
+        "duels_won_pct": round(float(df["Defensive duels won, %"].mean()), 1),
+        "sample_size": int(len(df)),
+        "minutes_threshold": round(min_mins, 0),
+    }
+
+def build_metric_targets(pass_base: dict, def_base: dict, benchmark_source: str = "MLS") -> dict:
+    bench = load_benchmark_targets(benchmark_source)
+    return {
+        "total_p90": bench["total_p90"] if bench else _rand_target(pass_base["total_p90"], "total_p90"),
+        "accuracy_pct": bench["accuracy_pct"] if bench else _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
+        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base["advanced_passes_p90"], "advanced_passes_p90"),
+        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base["advanced_accuracy_pct"], "advanced_accuracy_pct", is_pct=True),
         "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
         "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
-        "total_actions_p90": _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
+        "total_actions_p90": bench["total_actions_p90"] if bench else _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
         "actions_own_p90": _rand_target(def_base["actions_own_p90"], "actions_own_p90"),
-        "duels_p90": _rand_target(def_base["duels_p90"], "duels_p90"),
-        "duels_won_pct": _rand_target(def_base["duels_won_pct"], "duels_won_pct", is_pct=True),
+        "duels_p90": bench["duels_p90"] if bench else _rand_target(def_base["duels_p90"], "duels_p90"),
+        "duels_won_pct": bench["duels_won_pct"] if bench else _rand_target(def_base["duels_won_pct"], "duels_won_pct", is_pct=True),
         "interceptions_p90": _rand_target(def_base["interceptions_p90"], "interceptions_p90"),
         "funnel_actions_p90": _rand_target(def_base["funnel_actions_p90"], "funnel_actions_p90"),
         "funnel_success_pct": _rand_target(def_base["funnel_success_pct"], "funnel_success_pct", is_pct=True),
@@ -1691,7 +1731,7 @@ def _pdf_dashboard_section(section_title, map_entries, stat_cards, pstyles):
         cards_row,
     ]
 
-def generate_season_pdf(card_tones=None):
+def generate_season_pdf(card_tones=None, benchmark_source="MLS"):
     if not PDF_AVAILABLE:
         raise RuntimeError("reportlab is not installed. Run: pip install reportlab")
     tones = card_tones or PASS_TONES
@@ -1724,7 +1764,7 @@ def generate_season_pdf(card_tones=None):
         for k in def_all[0].keys():
             if isinstance(def_all[0][k], (int, float)):
                 _db[k] = sum(s[k] for s in def_all) / len(def_all)
-    T_pdf = build_metric_targets(_pb, _db)
+    T_pdf = build_metric_targets(_pb, _db, benchmark_source)
 
     img_pm, fig_pm = draw_pass_map(df_pass); plt.close(fig_pm)
     img_ht, fig_ht = draw_corridor_heatmap(df_pass); plt.close(fig_ht)
@@ -1850,6 +1890,26 @@ CARD_TONE_SCHEME = st.sidebar.radio(
 )
 ACTIVE_CARD_TONES = GRAY_TONES if CARD_TONE_SCHEME == "Gray" else PASS_TONES
 
+st.sidebar.markdown("#### Target Benchmark")
+TARGET_BENCHMARK = st.sidebar.radio(
+    "Comparison pool",
+    options=["MLS", "TOP 5 - UE"],
+    index=0,
+    help=(
+        "Targets for passes and defensive duels are the position-filtered averages "
+        f"from the selected database ({', '.join(BENCHMARK_POSITIONS)}; "
+        f"≥{int(BENCHMARK_MINUTES_RATIO * 100)}% of max minutes)."
+    ),
+)
+_bench_meta = load_benchmark_targets(TARGET_BENCHMARK)
+if _bench_meta is None:
+    st.sidebar.warning(f"Benchmark file not found for {TARGET_BENCHMARK}. Using fallback targets.")
+else:
+    st.sidebar.caption(
+        f"{TARGET_BENCHMARK}: {_bench_meta['sample_size']} players · "
+        f"≥{_bench_meta['minutes_threshold']:.0f} min"
+    )
+
 st.sidebar.markdown("---")
 st.sidebar.markdown("#### Export Report")
 if not PDF_AVAILABLE:
@@ -1858,7 +1918,10 @@ else:
     if st.sidebar.button("Generate PDF Report", type="primary", use_container_width=True):
         with st.spinner("Building season report..."):
             try:
-                pdf_bytes = generate_season_pdf(card_tones=ACTIVE_CARD_TONES)
+                pdf_bytes = generate_season_pdf(
+                    card_tones=ACTIVE_CARD_TONES,
+                    benchmark_source=TARGET_BENCHMARK,
+                )
                 st.session_state["pdf_report"] = pdf_bytes
                 st.sidebar.success("Report ready!")
             except Exception as exc:
@@ -1889,14 +1952,19 @@ if len(def_all_stats) > 0:
         if isinstance(def_all_stats[0][k], (int, float)):
             _def_base[k] = sum(s[k] for s in def_all_stats) / len(def_all_stats)
 
-METRIC_TARGETS = build_metric_targets(_pass_base, _def_base)
+METRIC_TARGETS = build_metric_targets(_pass_base, _def_base, TARGET_BENCHMARK)
 T = METRIC_TARGETS
 
 with st.sidebar.expander("Season targets (reference)"):
     _tgt_rows = []
+    _db_keys = {
+        "total_p90", "accuracy_pct", "advanced_passes_p90", "advanced_accuracy_pct",
+        "total_actions_p90", "duels_p90", "duels_won_pct",
+    }
     for _k, _v in T.items():
         _base = _pass_base.get(_k, _def_base.get(_k, 0))
-        _tgt_rows.append({"Metric": _k, "Hudson Per Game": round(_base, 2), "Target": _v})
+        _src = TARGET_BENCHMARK if _k in _db_keys and _bench_meta else "Generated"
+        _tgt_rows.append({"Metric": _k, "Hudson Per Game": round(_base, 2), "Target": _v, "Source": _src})
     st.dataframe(pd.DataFrame(_tgt_rows), hide_index=True, use_container_width=True)
 
 # ── LAYOUT ─────────────────────────────────────────────────────
