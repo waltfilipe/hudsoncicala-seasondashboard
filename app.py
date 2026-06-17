@@ -14,29 +14,10 @@ from PIL import Image
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle
 from matplotlib.colors import Normalize, LinearSegmentedColormap
-import mplcursors
-
-# PDF
-PDF_AVAILABLE = True
-try:
-    from reportlab.lib import colors as rl_colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import cm
-    from reportlab.platypus import (
-        Image as RLImage,
-        PageBreak,
-        Paragraph,
-        SimpleDocTemplate,
-        Spacer,
-        Table,
-        TableStyle,
-    )
-except Exception:
-    PDF_AVAILABLE = False
+import plotly.graph_objects as go
 
 # PAGE CONFIG
-st.set_page_config(layout="wide", page_title="Hudson Cicala — Dashboard")
+st.set_page_config(layout="wide", page_title="Generic Player — Dashboard")
 
 # OPTIONAL DOCX IMPORT
 DOCX_AVAILABLE = True
@@ -47,21 +28,6 @@ except Exception:
 
 # STYLE
 st.markdown("""
-<style>
-    .block-container { padding-top: 1.5rem; }
-    div[data-testid="stMetric"] {
-        background: linear-gradient(145deg, rgba(30,30,46,0.9), rgba(20,20,32,0.95));
-        border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 12px;
-        padding: 12px 16px;
-    }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0 0;
-        padding: 8px 20px;
-        font-weight: 600;
-    }
-</style>
 """, unsafe_allow_html=True)
 
 # CONSTANTS
@@ -86,9 +52,15 @@ C_PURPLE_LIGHT = "#a78bfa"
 C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
+# Card tone palettes by action type (lighter -> darker within each type)
+# Passes = blue, Defensive Actions = green, Offensive Actions = red
 PASS_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
-GRAY_TONES = ["#b8c0cc", "#8b93a7", "#6b7280"]
-DEF_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
+DEF_TONES = ["#70ad47", "#22c55e", "#15803d"]
+OFF_TONES = ["#f08a8a", "#ef4444", "#b91c1c"]
+# Toggled from the sidebar ("Caixinhas modernas")
+MODERN_CARDS = False
+# Toggled in the Development tab ("Gráficos elegantes")
+ELEGANT_CHARTS = False
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
 NX_XT, NY_XT = 16, 12
@@ -98,6 +70,14 @@ PENALTY_AREA_X = 18.0
 FUNNEL_X_EXTEND = 33.0
 PENALTY_AREA_Y_MIN = 18.0
 PENALTY_AREA_Y_MAX = 62.0
+GOAL_WIDTH = 7.32
+GOAL_HEIGHT = 2.44
+SHOT_HALF_X = HALF_LINE_X
+EVO_CATEGORY_COLORS = {
+    "passes": PASS_TONES[1],
+    "defensive": DEF_TONES[1],
+    "offensive": OFF_TONES[1],
+}
 
 def _hex_to_rgba(hex_color, alpha=1.0):
     if hex_color.startswith('#'):
@@ -172,371 +152,215 @@ def xt_value(x, y):
     return float(XT_GRID[iy, ix])
 
 def is_in_funnel_zone(x, y):
+    """Check if a defensive action is in the penalty area + 15m extended zone."""
     return x <= FUNNEL_X_EXTEND and PENALTY_AREA_Y_MIN <= y <= PENALTY_AREA_Y_MAX
 
-# ── DATA ───────────────────────────────────────────────────────
-BASE_MATCHES_DATA = {
-    "Connecticut United (03-27)": [
-        ("PASS WON", 26.75, 68.34, 8.97, 51.05, None),
-        ("PASS WON", 31.24, 51.22, 34.57, 72.50, None),
-        ("PASS WON", 36.06, 46.90, 44.37, 57.04, None),
-        ("PASS WON", 48.36, 64.02, 58.17, 51.72, None),
-        ("PASS WON", 58.17, 64.02, 62.49, 55.21, None),
-        ("PASS WON", 54.51, 49.72, 64.82, 61.69, None),
-        ("PASS WON", 42.21, 70.84, 34.90, 76.49, None),
-        ("PASS WON", 43.54, 75.32, 36.73, 67.84, None),
-        ("PASS WON", 32.24, 53.96, 6.81, 38.50, None),
-        ("PASS WON", 33.57, 65.77, 36.56, 75.57, None),
-        ("PASS WON", 37.39, 61.11, 43.04, 75.41, None),
-        ("PASS WON", 65.49, 53.63, 56.18, 70.42, None),
-        ("PASS WON", 55.68, 48.15, 46.87, 30.86, None),
-        ("PASS WON", 52.02, 22.05, 46.70, 41.99, None),
-        ("PASS WON", 62.16, 35.51, 71.80, 35.18, None),
-        ("PASS WON", 54.02, 33.35, 63.99, 22.55, None),
-        ("PASS WON", 60.00, 22.21, 76.62, 32.85, None),
-        ("PASS WON", 87.10, 9.41, 77.45, 16.23, None),
-        ("PASS WON", 62.66, 20.05, 117.18, 8.25, None),
-        ("PASS WON", 98.90, 43.49, 103.22, 47.15, None),
-        ("PASS WON", 70.31, 45.98, 82.28, 60.11, None),
-        ("PASS WON", 85.10, 75.24, 101.39, 74.08, None),
-        ("PASS WON", 53.18, 67.59, 39.05, 59.62, None),
-        ("PASS WON", 55.18, 49.64, 54.85, 13.07, None),
-        ("PASS WON", 68.64, 19.22, 49.03, 24.37, None),
-        ("PASS WON", 53.35, 22.71, 59.34, 30.19, None),
-        ("PASS WON", 44.37, 24.71, 40.05, 46.82, None),
-        ("PASS WON", 43.88, 39.34, 41.38, 73.08, None),
-        ("PASS WON", 56.84, 53.46, 70.81, 76.24, None),
-        ("PASS WON", 82.77, 12.24, 91.42, 4.59, None),
-        ("PASS WON", 108.04, 11.74, 115.69, 58.29, None),
-        ("PASS WON", 93.08, 3.93, 111.03, 13.74, None),
-        ("PASS WON", 84.60, 17.89, 96.74, 22.05, None),
-        ("PASS WON", 58.34, 16.06, 65.65, 2.43, None),
-        ("PASS WON", 52.02, 8.58, 44.37, 15.73, None),
-        ("PASS WON", 61.00, 23.21, 49.36, 15.23, None),
-        ("PASS WON", 32.74, 30.69, 50.03, 33.02, None),
-        ("PASS WON", 51.85, 33.68, 60.66, 40.00, None),
-        ("PASS WON", 79.95, 60.45, 98.23, 60.28, None),
-        ("PASS WON", 31.24, 52.14, 39.05, 72.08, None),
-        ("PASS WON", 39.72, 48.98, 33.40, 57.62, None),
-        ("PASS WON", 70.64, 51.47, 61.00, 51.64, None),
-        ("PASS LOST", 53.35, 19.55, 73.96, 11.24, None),
-        ("PASS LOST", 63.82, 20.55, 88.76, 22.55, None),
-        ("PASS LOST", 85.60, 27.86, 94.41, 37.17, None),
-        ("PASS LOST", 77.79, 27.53, 96.41, 25.37, None),
-        ("PASS LOST", 91.09, 27.86, 109.54, 50.47, None),
-        ("PASS LOST", 58.17, 26.04, 95.41, 40.33, None),
-        ("PASS LOST", 53.35, 28.53, 73.80, 27.86, None),
-        ("PASS LOST", 53.35, 34.02, 84.60, 58.62, None),
-        ("PASS LOST", 56.18, 49.48, 97.07, 62.11, None),
-        ("PASS LOST", 34.23, 74.91, 65.65, 78.57, None),
-    ],
-    "Nashville SC (03-28)": [
-        ("PASS WON", 21.27, 14.23, 29.25, 31.02, None),
-        ("PASS WON", 29.41, 23.38, 34.40, 64.60, None),
-        ("PASS WON", 41.55, 39.67, 41.88, 6.92, None),
-        ("PASS WON", 44.54, 32.52, 43.54, 14.23, None),
-        ("PASS WON", 23.59, 56.46, 34.57, 47.48, None),
-        ("PASS WON", 30.58, 64.44, 21.10, 49.48, None),
-        ("PASS WON", 33.07, 56.79, 49.53, 69.59, None),
-        ("PASS WON", 33.24, 59.78, 44.04, 71.75, None),
-        ("PASS WON", 61.50, 71.58, 54.68, 75.57, None),
-        ("PASS WON", 63.16, 50.81, 78.45, 67.26, None),
-        ("PASS WON", 63.49, 76.90, 84.44, 62.77, None),
-        ("PASS WON", 76.96, 56.96, 86.93, 57.79, None),
-        ("PASS WON", 82.61, 59.12, 96.41, 68.43, None),
-        ("PASS WON", 79.78, 35.35, 106.21, 11.74, None),
-        ("PASS WON", 45.37, 49.64, 40.72, 32.02, None),
-        ("PASS LOST", 78.62, 64.94, 96.57, 67.10, None),
-        ("PASS LOST", 85.43, 68.76, 106.05, 77.74, None),
-    ],
-    "Seongnam FC (03-29)": [
-        ("PASS WON", 28.08, 28.53, 29.75, 8.25, None),
-        ("PASS WON", 33.74, 26.54, 29.41, 43.82, None),
-        ("PASS WON", 28.08, 47.15, 31.57, 64.60, None),
-        ("PASS WON", 39.39, 43.82, 51.69, 53.46, None),
-        ("PASS WON", 43.88, 46.15, 55.84, 40.66, None),
-        ("PASS WON", 47.03, 49.97, 44.04, 28.03, None),
-        ("PASS WON", 47.53, 50.81, 71.97, 33.18, None),
-        ("PASS WON", 67.65, 52.63, 64.32, 33.85, None),
-        ("PASS WON", 73.63, 65.10, 69.31, 73.25, None),
-        ("PASS WON", 77.29, 63.27, 79.12, 72.91, None),
-        ("PASS WON", 81.61, 56.62, 93.91, 73.75, None),
-        ("PASS WON", 86.43, 66.43, 81.78, 54.96, None),
-        ("PASS WON", 111.03, 71.42, 99.56, 67.59, None),
-        ("PASS WON", 89.76, 59.62, 97.74, 48.98, None),
-        ("PASS WON", 88.43, 52.47, 96.41, 74.24, None),
-        ("PASS WON", 87.93, 50.97, 77.12, 27.70, None),
-        ("PASS WON", 81.61, 53.63, 74.30, 27.03, None),
-        ("PASS WON", 79.28, 51.14, 94.91, 70.42, None),
-        ("PASS WON", 52.85, 32.85, 65.49, 25.37, None),
-        ("PASS WON", 82.77, 33.18, 69.31, 47.65, None),
-        ("PASS LOST", 72.14, 16.56, 78.45, 1.60, None),
-        ("PASS LOST", 79.62, 27.53, 97.07, 47.98, None),
-        ("PASS LOST", 91.75, 50.14, 109.70, 65.77, None),
-        ("PASS LOST", 96.41, 56.79, 107.04, 67.26, None),
-    ],
-    "NY Red Bulls (03-31)": [
-        ("PASS WON", 39.39, 19.39, 52.35, 4.76, None),
-        ("PASS WON", 63.82, 7.92, 72.63, 1.43, None),
-        ("PASS WON", 70.47, 11.91, 80.95, 13.74, None),
-        ("PASS WON", 64.49, 22.55, 97.24, 10.24, None),
-        ("PASS WON", 32.07, 35.51, 43.04, 28.20, None),
-        ("PASS WON", 53.52, 46.32, 54.02, 33.68, None),
-        ("PASS WON", 77.12, 48.64, 84.94, 50.14, None),
-        ("PASS WON", 78.12, 52.47, 117.52, 69.42, None),
-        ("PASS WON", 88.76, 65.93, 97.40, 76.74, None),
-        ("PASS WON", 82.61, 69.26, 86.60, 77.40, None),
-        ("PASS WON", 78.62, 66.26, 79.62, 78.40, None),
-        ("PASS WON", 83.61, 75.91, 62.49, 57.12, None),
-        ("PASS WON", 34.40, 50.14, 88.76, 75.41, None),
-        ("PASS WON", 56.68, 64.27, 78.29, 64.27, None),
-        ("PASS WON", 51.85, 73.25, 54.18, 78.07, None),
-        ("PASS WON", 41.05, 57.45, 46.04, 74.91, None),
-        ("PASS WON", 37.39, 60.61, 41.71, 73.91, None),
-        ("PASS WON", 30.41, 63.44, 36.89, 77.40, None),
-        ("PASS WON", 26.09, 63.94, 28.42, 76.74, None),
-        ("PASS WON", 22.43, 56.62, 22.10, 76.41, None),
-        ("PASS WON", 33.90, 64.77, 25.42, 73.58, None),
-        ("PASS LOST", 41.88, 42.49, 56.18, 52.97, None),
-        ("PASS LOST", 37.56, 41.16, 46.37, 53.96, None),
-        ("PASS LOST", 54.68, 56.96, 54.85, 64.44, None),
-        ("PASS LOST", 51.69, 68.43, 66.15, 76.57, None),
-    ],
-}
+# GENERIC RANDOM DATA GENERATOR (follows the Hudson Cicala data pattern)
+# Synthetic pass & defensive-action data for a generic player, 20 matches.
+# Reproducible thanks to a fixed seed.
+import random as _random
 
-DEFENSIVE_MATCHES_DATA = {
-    "Michigan Wolves (02-20)": [
-        ("DUEL_WON", 53.85, 25.21),
-        ("DUEL_WON", 23.59, 29.69),
-        ("DUEL_WON", 43.88, 50.31),
-        ("DUEL_WON", 16.28, 50.47),
-        ("DUEL_WON", 15.62, 72.08),
-        ("DUEL_LOST", 73.63, 27.70),
-        ("DUEL_LOST", 17.78, 75.41),
-        ("INTERCEPTION", 65.82, 19.05),
-        ("INTERCEPTION", 72.80, 57.62),
-    ],
-    "Philadelphia Union (02-27)": [
-        ("DUEL_WON", 67.98, 34.68),
-        ("DUEL_WON", 41.05, 23.54),
-        ("DUEL_WON", 21.27, 31.36),
-        ("DUEL_WON", 39.55, 60.95),
-        ("DUEL_LOST", 29.08, 40.50),
-        ("INTERCEPTION", 53.52, 19.05),
-        ("INTERCEPTION", 28.08, 27.03),
-        ("INTERCEPTION", 29.75, 53.63),
-        ("INTERCEPTION", 30.58, 69.42),
-        ("INTERCEPTION", 52.19, 58.12),
-        ("INTERCEPTION", 59.17, 63.11),
-        ("INTERCEPTION", 80.78, 68.92),
-    ],
-    "Columbus Crew (03-06)": [
-        ("DUEL_WON", 22.76, 29.69),
-        ("DUEL_WON", 48.36, 20.72),
-        ("DUEL_LOST", 63.32, 56.96),
-        ("DUEL_LOST", 25.42, 53.63),
-        ("DUEL_LOST", 27.42, 34.35),
-        ("DUEL_LOST", 35.06, 36.84),
-        ("INTERCEPTION", 29.75, 35.84),
-        ("INTERCEPTION", 29.41, 40.00),
-        ("INTERCEPTION", 37.39, 60.95),
-    ],
-    "Minnesota United (03-13)": [
-        ("DUEL_WON", 44.04, 58.95),
-        ("DUEL_WON", 14.78, 18.56),
-        ("DUEL_WON", 17.61, 12.24),
-        ("DUEL_LOST", 77.29, 27.20),
-        ("DUEL_LOST", 39.89, 3.43),
-        ("DUEL_LOST", 33.24, 10.91),
-        ("DUEL_LOST", 35.90, 57.12),
-        ("DUEL_LOST", 0.99, 69.26),
-        ("INTERCEPTION", 31.74, 38.50),
-        ("INTERCEPTION", 35.06, 36.34),
-        ("INTERCEPTION", 38.39, 41.00),
-        ("INTERCEPTION", 46.54, 26.37),
-        ("INTERCEPTION", 40.38, 19.22),
-    ],
-    "Vardar Soccer (03-14)": [
-        ("INTERCEPTION", 72.63, 35.18),
-        ("INTERCEPTION", 12.29, 44.99),
-    ],
-    "Colorado Rapids (03-20)": [
-        ("DUEL_WON", 36.39, 73.75),
-        ("DUEL_WON", 39.39, 68.76),
-        ("DUEL_WON", 52.02, 66.10),
-        ("DUEL_WON", 21.60, 53.63),
-        ("DUEL_WON", 35.06, 43.32),
-        ("DUEL_WON", 36.39, 31.36),
-        ("DUEL_WON", 45.54, 25.04),
-        ("DUEL_WON", 34.40, 21.71),
-        ("DUEL_WON", 53.68, 17.23),
-        ("DUEL_WON", 57.67, 22.55),
-        ("DUEL_LOST", 78.95, 4.59),
-        ("DUEL_LOST", 75.46, 65.43),
-        ("DUEL_LOST", 33.07, 54.46),
-        ("INTERCEPTION", 67.31, 9.58),
-        ("INTERCEPTION", 39.89, 24.54),
-        ("INTERCEPTION", 43.38, 28.86),
-        ("INTERCEPTION", 27.92, 35.01),
-        ("INTERCEPTION", 64.49, 53.80),
-        ("INTERCEPTION", 36.56, 55.96),
-        ("INTERCEPTION", 30.58, 62.11),
-    ],
-    "Connecticut United (03-27)": [
-        ("DUEL_WON", 82.94, 3.43),
-        ("DUEL_WON", 70.47, 21.05),
-        ("DUEL_WON", 67.31, 27.53),
-        ("DUEL_WON", 27.58, 32.52),
-        ("DUEL_LOST", 65.49, 22.71),
-        ("DUEL_LOST", 3.48, 72.42),
-        ("INTERCEPTION", 82.28, 31.02),
-        ("INTERCEPTION", 66.15, 26.04),
-        ("INTERCEPTION", 83.94, 56.29),
-        ("INTERCEPTION", 59.00, 61.44),
-    ],
-    "Nashville SC (03-28)": [
-        ("DUEL_WON", 84.77, 54.79),
-        ("DUEL_WON", 62.33, 55.46),
-        ("DUEL_WON", 35.90, 62.61),
-        ("DUEL_WON", 40.38, 70.09),
-        ("DUEL_WON", 40.38, 40.33),
-        ("DUEL_WON", 26.92, 23.71),
-        ("DUEL_LOST", 92.91, 24.54),
-        ("DUEL_LOST", 90.59, 53.63),
-        ("DUEL_LOST", 64.82, 59.78),
-        ("DUEL_LOST", 51.02, 71.58),
-        ("INTERCEPTION", 85.60, 23.38),
-        ("INTERCEPTION", 65.65, 57.12),
-        ("INTERCEPTION", 77.45, 61.78),
-    ],
-    "Seongnam FC (03-29)": [
-        ("DUEL_LOST", 73.80, 21.71),
-        ("INTERCEPTION", 38.06, 30.36),
-    ],
-    "NY Red Bulls (03-31)": [
-        ("DUEL_WON", 33.87, 59.39),
-        ("DUEL_WON", 37.58, 67.14),
-        ("DUEL_LOST", 66.32, 60.28),
-        ("INTERCEPTION", 34.90, 34.02),
-        ("INTERCEPTION", 56.34, 42.66),
-        ("INTERCEPTION", 68.15, 54.30),
-    ],
-    "Minnesota United (04-10)": [
-        ("DUEL_WON", 15.62, 54.30),
-        ("DUEL_LOST", 36.39, 39.34),
-        ("DUEL_LOST", 10.79, 64.27),
-        ("INTERCEPTION", 66.15, 68.59),
-        ("INTERCEPTION", 25.42, 54.79),
-        ("INTERCEPTION", 35.06, 48.15),
-        ("INTERCEPTION", 22.76, 21.88),
-        ("INTERCEPTION", 56.84, 25.87),
-        ("INTERCEPTION", 82.11, 20.72),
-    ],
-    "Sporting Kansas City (04-17)": [
-        ("DUEL_WON", 85.43, 17.06),
-        ("DUEL_WON", 76.12, 20.72),
-        ("DUEL_WON", 54.68, 12.07),
-        ("DUEL_WON", 53.18, 24.87),
-        ("DUEL_WON", 24.92, 34.35),
-        ("DUEL_WON", 31.24, 49.64),
-        ("DUEL_WON", 39.05, 52.14),
-        ("DUEL_WON", 43.71, 62.61),
-        ("DUEL_WON", 49.69, 73.25),
-        ("DUEL_WON", 75.79, 62.77),
-        ("DUEL_LOST", 30.24, 69.09),
-        ("INTERCEPTION", 60.83, 15.40),
-        ("INTERCEPTION", 10.79, 25.87),
-        ("INTERCEPTION", 52.35, 52.97),
-        ("INTERCEPTION", 70.14, 61.28),
-        ("INTERCEPTION", 54.85, 62.11),
-        ("INTERCEPTION", 39.89, 66.60),
-    ],
-    "Cedar Stars (04-22)": [
-        ("DUEL_WON", 9.30, 22.88),
-        ("DUEL_WON", 59.00, 15.06),
-        ("DUEL_WON", 60.83, 44.65),
-        ("INTERCEPTION", 75.46, 28.20),
-        ("INTERCEPTION", 79.95, 57.29),
-        ("INTERCEPTION", 27.09, 66.43),
-    ],
-    "South Florida (04-23)": [
-        ("DUEL_WON", 36.23, 32.85),
-        ("DUEL_WON", 42.05, 54.79),
-        ("DUEL_WON", 35.56, 57.62),
-        ("DUEL_WON", 70.97, 18.72),
-        ("INTERCEPTION", 55.18, 63.77),
-        ("INTERCEPTION", 22.26, 62.94),
-    ],
-    "Real Salt Lake (04-26)": [
-        ("DUEL_WON", 47.70, 56.96),
-        ("DUEL_WON", 26.75, 55.29),
-        ("DUEL_WON", 21.93, 26.37),
-        ("DUEL_WON", 68.15, 2.93),
-        ("DUEL_LOST", 76.29, 32.02),
-        ("INTERCEPTION", 15.78, 53.30),
-        ("INTERCEPTION", 35.23, 24.54),
-        ("INTERCEPTION", 76.79, 21.55),
-    ],
-    "Real Futbol (05-23)": [
-        ("DUEL_WON", 72.63, 10.24),
-        ("DUEL_WON", 73.80, 13.90),
-        ("DUEL_WON", 54.68, 40.50),
-        ("DUEL_LOST", 69.97, 22.55),
-        ("DUEL_LOST", 30.24, 5.26),
-        ("DUEL_LOST", 39.22, 71.75),
-        ("INTERCEPTION", 75.46, 56.12),
-    ],
-    "San Jose (05-24)": [
-        ("DUEL_WON", 8.97, 23.21),
-        ("DUEL_WON", 23.76, 23.71),
-        ("DUEL_WON", 24.09, 41.50),
-        ("DUEL_WON", 30.91, 61.61),
-        ("DUEL_WON", 65.15, 39.17),
-        ("DUEL_WON", 69.31, 29.36),
-        ("DUEL_LOST", 27.42, 52.97),
-        ("DUEL_LOST", 30.74, 49.48),
-        ("DUEL_LOST", 34.73, 52.80),
-        ("DUEL_LOST", 43.38, 59.62),
-        ("DUEL_LOST", 34.90, 63.77),
-        ("DUEL_LOST", 31.08, 62.61),
-        ("DUEL_LOST", 21.27, 66.93),
-        ("DUEL_LOST", 70.47, 57.79),
-        ("INTERCEPTION", 76.62, 21.38),
-        ("INTERCEPTION", 80.78, 60.61),
-        ("INTERCEPTION", 21.93, 57.45),
-        ("INTERCEPTION", 25.59, 70.59),
-        ("INTERCEPTION", 34.90, 31.52),
-        ("INTERCEPTION", 38.39, 33.68),
-        ("INTERCEPTION", 29.91, 23.38),
-    ],
-    "Houston Dynamo (05-26)": [
-        ("DUEL_WON", 68.31, 37.84),
-        ("DUEL_WON", 68.15, 42.33),
-        ("DUEL_WON", 83.27, 73.75),
-        ("DUEL_WON", 55.51, 62.77),
-        ("DUEL_WON", 49.53, 75.91),
-        ("DUEL_WON", 31.24, 70.92),
-        ("DUEL_WON", 24.59, 55.29),
-        ("DUEL_LOST", 21.60, 21.88),
-        ("DUEL_LOST", 26.59, 60.45),
-    ],
-}
+_GEN_SEED = 2026
+_GEN_FIELD_X, _GEN_FIELD_Y = 120.0, 80.0
 
-# ── HELPERS ────────────────────────────────────────────────────
+
+def _gen_clampx(v):
+    return min(_GEN_FIELD_X, max(0.0, v))
+
+
+def _gen_clampy(v):
+    return min(_GEN_FIELD_Y, max(0.0, v))
+
+
+def _gen_r2(v):
+    return round(float(v), 2)
+
+
+def _gen_lane_y(rng):
+    """Bias start positions toward the wide corridors (like Hudson Cicala),
+    with fewer touches through the central lane.
+    Lanes: left (y >= 53.33), center (26.67 <= y < 53.33), right (y < 26.67)."""
+    roll = rng.random()
+    if roll < 0.43:            # left corridor
+        return _gen_clampy(rng.gauss(67, 7))
+    elif roll < 0.64:          # central lane
+        return _gen_clampy(rng.gauss(40, 5))
+    else:                      # right corridor
+        return _gen_clampy(rng.gauss(13, 7))
+
+
+def _gen_pass(rng, won):
+    """One pass following the original pattern: starts around midfield and
+    progresses forward; lost passes are more ambitious and deeper.
+    Start positions favour the wide corridors over the central lane."""
+    x_start = _gen_clampx(rng.gauss(55, 22))
+    y_start = _gen_lane_y(rng)
+    if won:
+        dx = rng.gauss(9, 13)
+        dy = rng.gauss(0, 16)
+    else:
+        x_start = _gen_clampx(x_start + rng.uniform(5, 20))
+        dx = rng.gauss(18, 14)
+        dy = rng.gauss(0, 18)
+    x_end = _gen_clampx(x_start + dx)
+    y_end = _gen_clampy(y_start + dy)
+    return (_gen_r2(x_start), _gen_r2(y_start), _gen_r2(x_end), _gen_r2(y_end))
+
+
+def _gen_match_passes(rng):
+    n = rng.randint(16, 50)
+    win_rate = rng.uniform(0.72, 0.88)
+    n_won = int(round(n * win_rate))
+    n_lost = max(1, n - n_won)
+    rows = []
+    for _ in range(n_won):
+        x1, y1, x2, y2 = _gen_pass(rng, True)
+        rows.append(("PASS WON", x1, y1, x2, y2, None))
+    for _ in range(n_lost):
+        x1, y1, x2, y2 = _gen_pass(rng, False)
+        rows.append(("PASS LOST", x1, y1, x2, y2, None))
+    return rows
+
+
+def _gen_def_action(rng, kind):
+    # Based on the Hudson Cicala defensive sample: actions concentrate in the
+    # own/middle thirds and away from the touchlines and goal line.
+    # Keep a safe margin from the back line (x >= 12) and sidelines (10 <= y <= 70).
+    if kind == "INTERCEPTION":
+        x = rng.gauss(50, 17)
+    else:
+        x = rng.gauss(46, 18)
+    x = min(95.0, max(12.0, x))
+    y = min(70.0, max(10.0, rng.gauss(41, 15)))
+    return (kind, _gen_r2(x), _gen_r2(y))
+
+
+def _gen_match_def(rng):
+    n = rng.randint(2, 21)
+    rows = []
+    for _ in range(n):
+        roll = rng.random()
+        if roll < 0.45:
+            kind = "DUEL_WON"
+        elif roll < 0.70:
+            kind = "DUEL_LOST"
+        else:
+            kind = "INTERCEPTION"
+        rows.append(_gen_def_action(rng, kind))
+    order = {"DUEL_WON": 0, "DUEL_LOST": 1, "INTERCEPTION": 2}
+    rows.sort(key=lambda r: order[r[0]])
+    return rows
+
+
+def _generate_generic_dataset(seed=_GEN_SEED, n_matches=20):
+    rng = _random.Random(seed)
+    names = []
+    minutes = {}
+    for i in range(1, n_matches + 1):
+        mm = 3 + (i // 11)
+        dd = ((1 + i * 4 - 1) % 28) + 1
+        name = f"Opponent {i:02d} ({mm:02d}-{dd:02d})"
+        names.append(name)
+        minutes[name] = float(rng.choice([90, 90, 90, 90, 75, 60, 63, 65, 45]))
+    base = {name: _gen_match_passes(rng) for name in names}
+    deff = {name: _gen_match_def(rng) for name in names}
+    return base, deff, minutes
+
+
+BASE_MATCHES_DATA, DEFENSIVE_MATCHES_DATA, MATCH_MINUTES = _generate_generic_dataset()
+
+
+# OFFENSIVE RANDOM DATA GENERATOR (offensive duels, touches & shots)
+# Modest volumes per match so the maps stay readable (not exaggerated).
+def _gen_off_duel(rng, won):
+    # offensive duels concentrate in the attacking half / final third,
+    # kept away from the sidelines (margin of ~10 from each touchline)
+    x = _gen_clampx(rng.gauss(80, 16))
+    y = min(70.0, max(10.0, rng.gauss(40, 15)))
+    return ("OFF_DUEL_WON" if won else "OFF_DUEL_LOST", _gen_r2(x), _gen_r2(y))
+
+
+def _gen_match_off_duels(rng):
+    n = rng.randint(3, 12)
+    win_rate = rng.uniform(0.40, 0.65)
+    rows = []
+    for _ in range(n):
+        rows.append(_gen_off_duel(rng, rng.random() < win_rate))
+    order = {"OFF_DUEL_WON": 0, "OFF_DUEL_LOST": 1}
+    rows.sort(key=lambda r: order[r[0]])
+    return rows
+
+
+def _gen_match_touches(rng):
+    # touches: more numerous, biased toward attacking midfield / final third
+    n = rng.randint(20, 45)
+    rows = []
+    for _ in range(n):
+        x = _gen_clampx(rng.gauss(72, 23))
+        y = _gen_clampy(rng.gauss(40, 22))
+        rows.append((_gen_r2(x), _gen_r2(y)))
+    return rows
+
+
+def _off_target_goal_coords(rng):
+    """Goal-mouth coordinates always outside the frame (7.32 m × 2.44 m)."""
+    side = rng.choice(["left", "right", "high", "low"])
+    if side == "left":
+        return rng.uniform(-1.8, -0.15), rng.uniform(-0.2, GOAL_HEIGHT + 0.2)
+    if side == "right":
+        return rng.uniform(GOAL_WIDTH + 0.15, GOAL_WIDTH + 1.8), rng.uniform(-0.2, GOAL_HEIGHT + 0.2)
+    if side == "high":
+        return rng.uniform(-0.3, GOAL_WIDTH + 0.3), rng.uniform(GOAL_HEIGHT + 0.15, GOAL_HEIGHT + 1.2)
+    return rng.uniform(0.0, GOAL_WIDTH), rng.uniform(-1.2, -0.15)
+
+
+def _gen_match_shots(rng):
+    # shots: few per match, around the penalty area.
+    # gx/gy in goal-mouth coords; blocked shots have no goal-mouth point.
+    n = rng.randint(0, 6)
+    rows = []
+    for _ in range(n):
+        x = _gen_clampx(rng.gauss(104, 7))
+        y = _gen_clampy(rng.gauss(40, 9))
+        roll = rng.random()
+        if roll < 0.10:
+            outcome = "GOAL"
+        elif roll < 0.38:
+            outcome = "ON_TARGET"
+        elif roll < 0.52:
+            outcome = "BLOCKED"
+        else:
+            outcome = "OFF_TARGET"
+        if outcome in ("GOAL", "ON_TARGET"):
+            gx = rng.uniform(0.4, 6.92)
+            gy = rng.uniform(0.2, 2.25)
+        elif outcome == "BLOCKED":
+            gx, gy = None, None
+        else:
+            gx, gy = _off_target_goal_coords(rng)
+        rows.append((
+            outcome, _gen_r2(x), _gen_r2(y),
+            _gen_r2(gx) if gx is not None else None,
+            _gen_r2(gy) if gy is not None else None,
+        ))
+    order = {"GOAL": 0, "ON_TARGET": 1, "BLOCKED": 2, "OFF_TARGET": 3}
+    rows.sort(key=lambda r: order[r[0]])
+    return rows
+
+
+def _generate_offensive_dataset(match_names, seed=_GEN_SEED + 7):
+    rng = _random.Random(seed)
+    duels = {name: _gen_match_off_duels(rng) for name in match_names}
+    touches = {name: _gen_match_touches(rng) for name in match_names}
+    shots = {name: _gen_match_shots(rng) for name in match_names}
+    return duels, touches, shots
+
+
+OFFENSIVE_DUELS_DATA, TOUCHES_DATA, SHOTS_DATA = _generate_offensive_dataset(list(BASE_MATCHES_DATA.keys()))
+
+# HELPERS
 def apply_date_mapping(name: str) -> str:
-    mapping = {
-        "Connecticut United": "Connecticut United (03-27)",
-        "Nashville SC": "Nashville SC (03-28)",
-        "Seongnam FC": "Seongnam FC (03-29)",
-        "NY Red Bulls": "NY Red Bulls (03-31)",
-        "Real Salt Lake": "Real Salt Lake (04-26)",
-        "Real Futbol": "Real Futbol (05-23)",
-        "San Jose": "San Jose (05-24)",
-        "Houston Dynamo": "Houston Dynamo (05-26)"
-    }
-    for k, v in mapping.items():
-        if k.lower() == name.lower().strip():
-            return v
+    # Generic dataset: no name remapping needed.
     return name
 
 def get_match_minutes(match_name: str) -> float:
@@ -545,20 +369,7 @@ def get_match_minutes(match_name: str) -> float:
         for k in dfs_by_match:
             total += get_match_minutes(k)
         return total
-    name_lower = match_name.lower()
-    if "connecticut" in name_lower:
-        return 60.0
-    if "nashville" in name_lower:
-        return 60.0
-    if "seongnam" in name_lower:
-        return 32.0
-    if "red bulls" in name_lower:
-        return 60.0
-    if "houston" in name_lower:
-        return 63.0
-    if "vardar" in name_lower:
-        return 65.0
-    return 90.0
+    return float(MATCH_MINUTES.get(match_name, 90.0))
 
 def read_docx_text(docx_path: Path) -> str:
     if not DOCX_AVAILABLE:
@@ -597,7 +408,7 @@ def parse_docx_events(raw_text: str) -> dict:
             matches[current_match].append((current_state, x1, y1, x2, y2, None))
     return {k: v for k, v in matches.items() if len(v) > 0}
 
-def load_docx_matches(docx_filename="Passes - Hudson Cicala.docx") -> dict:
+def load_docx_matches(docx_filename="Passes - Generic Player.docx") -> dict:
     p = Path(docx_filename)
     if not p.exists():
         return {}
@@ -631,10 +442,12 @@ for match_name, events in combined_matches_data.items():
     dfm["number"] = np.arange(1, len(dfm) + 1)
     dfm["is_won"] = dfm["type"].str.contains("WON", case=False)
     dfm["progressive"] = dfm.apply(
-        lambda r: r["is_won"] and is_progressive_pass(r["x_start"], r["y_start"], r["x_end"], r["y_end"]), axis=1
+        lambda r: r["is_won"] and is_progressive_pass(r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+        axis=1
     )
     dfm["direction"] = dfm.apply(
-        lambda r: classify_pass_direction(r["x_start"], r["y_start"], r["x_end"], r["y_end"]), axis=1
+        lambda r: classify_pass_direction(r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+        axis=1
     )
     dfm["is_forward"] = dfm["direction"] == "forward"
     dfm["is_backward"] = dfm["direction"] == "backward"
@@ -671,21 +484,73 @@ for match_name, events in DEFENSIVE_MATCHES_DATA.items():
     df_def["in_funnel"] = df_def.apply(lambda r: is_in_funnel_zone(r["x"], r["y"]), axis=1)
     defensive_dfs_by_match[match_name] = df_def
 
-# ── STATS ──────────────────────────────────────────────────────
+# OFFENSIVE DATA LOADING
+offensive_duels_dfs_by_match = {}
+for match_name, events in OFFENSIVE_DUELS_DATA.items():
+    df_od = pd.DataFrame(events, columns=["type", "x", "y"])
+    df_od["match"] = match_name
+    df_od["is_won"] = df_od["type"] == "OFF_DUEL_WON"
+    df_od["is_lost"] = df_od["type"] == "OFF_DUEL_LOST"
+    offensive_duels_dfs_by_match[match_name] = df_od
+
+touches_dfs_by_match = {}
+for match_name, events in TOUCHES_DATA.items():
+    df_to = pd.DataFrame(events, columns=["x", "y"])
+    df_to["match"] = match_name
+    df_to["is_final_third"] = df_to["x"] >= FINAL_THIRD_LINE_X
+    touches_dfs_by_match[match_name] = df_to
+
+shots_dfs_by_match = {}
+for match_name, events in SHOTS_DATA.items():
+    df_sh = pd.DataFrame(events, columns=["type", "x", "y", "gx", "gy"])
+    df_sh["match"] = match_name
+    df_sh["is_goal"] = df_sh["type"] == "GOAL"
+    df_sh["is_on_target"] = df_sh["type"].isin(["GOAL", "ON_TARGET"])
+    df_sh["is_blocked"] = df_sh["type"] == "BLOCKED"
+    df_sh["is_off_target"] = df_sh["type"] == "OFF_TARGET"
+    df_sh["has_goal_mouth"] = df_sh["gx"].notna() & df_sh["gy"].notna()
+    shots_dfs_by_match[match_name] = df_sh
+
+# STATS & SCORES
 def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     total = len(df)
     mins = get_match_minutes(match_name)
     p90_factor = 90.0 / mins if mins > 0 else 1.0
     if total == 0:
         return {
-            "total_passes": 0, "successful_passes": 0, "unsuccessful_passes": 0,
-            "accuracy_pct": 0.0, "progressive_attempted": 0, "progressive_successful": 0,
-            "progressive_accuracy_pct": 0.0, "to_final_third_total": 0, "to_final_third_success": 0,
-            "to_final_third_accuracy_pct": 0.0, "fwd": 0, "fwd_pct": 0.0, "bwd": 0, "bwd_pct": 0.0,
-            "lat": 0, "lat_pct": 0.0, "pos_count": 0, "pos_pct": 0.0, "high_xt_pct": 0.0,
-            "sum_dxt": 0.0, "total_p90": 0.0, "prog_p90": 0.0, "f3_p90": 0.0, "xt_p90": 0.0,
-            "neg_xt_p90": 0.0, "minutes": mins, "long_acc_pct": 0.0, "high_xt_p90": 0.0, "dz_p90": 0.0,
-            "advanced_passes_p90": 0.0, "advanced_accuracy_pct": 0.0,
+            "total_passes": 0,
+            "successful_passes": 0,
+            "unsuccessful_passes": 0,
+            "accuracy_pct": 0.0,
+            "progressive_attempted": 0,
+            "progressive_successful": 0,
+            "progressive_accuracy_pct": 0.0,
+            "to_final_third_total": 0,
+            "to_final_third_success": 0,
+            "to_final_third_accuracy_pct": 0.0,
+            "fwd": 0,
+            "fwd_pct": 0.0,
+            "bwd": 0,
+            "bwd_pct": 0.0,
+            "lat": 0,
+            "lat_pct": 0.0,
+            "pos_count": 0,
+            "pos_pct": 0.0,
+            "high_xt_pct": 0.0,
+            "sum_dxt": 0.0,
+            "total_p90": 0.0,
+            "prog_p90": 0.0,
+            "f3_p90": 0.0,
+            "xt_p90": 0.0,
+            "neg_xt_p90": 0.0,
+            "minutes": mins,
+            "long_acc_pct": 0.0,
+            "high_xt_p90": 0.0,
+            "dz_p90": 0.0,
+            "adv_made": 0,
+            "adv_att": 0,
+            "adv_acc_pct": 0.0,
+            "adv_p90": 0.0,
         }
     successful = int(df["is_won"].sum())
     unsuccessful = total - successful
@@ -693,7 +558,8 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     progressive_total = int(df["progressive"].sum())
     progressive_unsuccessful = int(
         (~df["is_won"] & df.apply(
-            lambda r: is_progressive_pass(r["x_start"], r["y_start"], r["x_end"], r["y_end"]), axis=1
+            lambda r: is_progressive_pass(r["x_start"], r["y_start"], r["x_end"], r["y_end"]),
+            axis=1
         )).sum()
     )
     progressive_attempted = progressive_total + progressive_unsuccessful
@@ -707,9 +573,14 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     long_success = int(long_passes["is_won"].sum())
     long_acc_pct = (long_success / long_total * 100.0) if long_total > 0 else 0.0
     dz_mask = df["is_won"] & (
-        (df["x_end"] >= 100.0) | ((df["x_end"] >= 80.0) & (df["x_end"] < 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] < LANE_LEFT_MIN))
+        (df["x_end"] >= 100.0) |
+        ((df["x_end"] >= 80.0) & (df["x_end"] < 100.0) & (df["y_end"] >= LANE_RIGHT_MAX) & (df["y_end"] < LANE_LEFT_MIN))
     )
     dz_passes = int(dz_mask.sum())
+    # Advanced passes = progressive + final-third passes (made / attempted)
+    adv_made = progressive_total + to_final_third_success
+    adv_att = progressive_attempted + to_final_third_total
+    adv_acc_pct = (adv_made / adv_att * 100.0) if adv_att > 0 else 0.0
     fwd = int(df["is_forward"].sum())
     bwd = int(df["is_backward"].sum())
     lat = int(df["is_lateral"].sum())
@@ -718,24 +589,231 @@ def compute_stats(df: pd.DataFrame, match_name: str) -> dict:
     high_xt = int((df["delta_xt_adj"] > 0.1).sum())
     sum_dxt = float(df.loc[df["is_won"], "delta_xt_adj"].sum())
     neg_xt = float(df.loc[df["is_won"] & (df["delta_xt_adj"] < 0), "delta_xt_adj"].sum())
-    advanced_successful = progressive_total + to_final_third_success
-    advanced_attempted = progressive_attempted + to_final_third_total
-    advanced_accuracy_pct = (advanced_successful / advanced_attempted * 100.0) if advanced_attempted else 0.0
-    advanced_passes_p90 = round((progressive_total + to_final_third_success) * p90_factor, 2)
     return {
-        "total_passes": total, "successful_passes": successful, "unsuccessful_passes": unsuccessful,
-        "accuracy_pct": round(accuracy, 2), "progressive_attempted": progressive_attempted,
-        "progressive_successful": progressive_total, "progressive_accuracy_pct": round(progressive_accuracy, 2),
-        "to_final_third_total": to_final_third_total, "to_final_third_success": to_final_third_success,
-        "to_final_third_accuracy_pct": round(to_final_third_accuracy, 2), "fwd": fwd, "fwd_pct": round(fwd / total * 100.0, 1),
-        "bwd": bwd, "bwd_pct": round(bwd / total * 100.0, 1), "lat": lat, "lat_pct": round(lat / total * 100.0, 1),
-        "pos_count": pos_count, "pos_pct": round(pos_pct, 1), "high_xt_pct": round(high_xt / total * 100.0, 1),
-        "sum_dxt": round(sum_dxt, 3), "total_p90": round(total * p90_factor, 1), "prog_p90": round(progressive_total * p90_factor, 2),
-        "f3_p90": round(to_final_third_success * p90_factor, 2), "xt_p90": round(sum_dxt * p90_factor, 3),
-        "neg_xt_p90": round(neg_xt * p90_factor, 3), "minutes": mins, "long_acc_pct": round(long_acc_pct, 1),
-        "high_xt_p90": round(high_xt * p90_factor, 2), "dz_p90": round(dz_passes * p90_factor, 2),
-        "advanced_passes_p90": round(advanced_passes_p90, 1), "advanced_accuracy_pct": round(advanced_accuracy_pct, 2),
+        "total_passes": total,
+        "successful_passes": successful,
+        "unsuccessful_passes": unsuccessful,
+        "accuracy_pct": round(accuracy, 2),
+        "progressive_attempted": progressive_attempted,
+        "progressive_successful": progressive_total,
+        "progressive_accuracy_pct": round(progressive_accuracy, 2),
+        "to_final_third_total": to_final_third_total,
+        "to_final_third_success": to_final_third_success,
+        "to_final_third_accuracy_pct": round(to_final_third_accuracy, 2),
+        "fwd": fwd,
+        "fwd_pct": round(fwd / total * 100.0, 1),
+        "bwd": bwd,
+        "bwd_pct": round(bwd / total * 100.0, 1),
+        "lat": lat,
+        "lat_pct": round(lat / total * 100.0, 1),
+        "pos_count": pos_count,
+        "pos_pct": round(pos_pct, 1),
+        "high_xt_pct": round(high_xt / total * 100.0, 1),
+        "sum_dxt": round(sum_dxt, 3),
+        "total_p90": round(total * p90_factor, 1),
+        "prog_p90": round(progressive_total * p90_factor, 2),
+        "f3_p90": round(to_final_third_success * p90_factor, 2),
+        "xt_p90": round(sum_dxt * p90_factor, 3),
+        "neg_xt_p90": round(neg_xt * p90_factor, 3),
+        "minutes": mins,
+        "long_acc_pct": round(long_acc_pct, 1),
+        "high_xt_p90": round(high_xt * p90_factor, 2),
+        "dz_p90": round(dz_passes * p90_factor, 2),
+        "adv_made": adv_made,
+        "adv_att": adv_att,
+        "adv_acc_pct": round(adv_acc_pct, 1),
+        "adv_p90": round(adv_made * p90_factor, 2),
     }
+
+def compute_match_scores(dfs_dict, defensive_dfs_dict=None, offensive_dicts=None):
+    records = []
+    for m_name, df_m in dfs_dict.items():
+        s = compute_stats(df_m, m_name)
+        total_passes = s['total_passes']
+        if total_passes == 0:
+            continue
+        records.append({
+            'match': m_name,
+            'xt_p90': s['xt_p90'],
+            'prog_p90': s['prog_p90'],
+            'f3_p90': s['f3_p90'],
+            'pos_pct': s['pos_pct'],
+            'total_p90': s['total_p90'],
+            'neg_xt_p90': s['neg_xt_p90'],
+            'accuracy_pct': s['accuracy_pct'],
+            'long_acc_pct': s['long_acc_pct'],
+            'high_xt_p90': s['high_xt_p90'],
+            'dz_p90': s['dz_p90'],
+            'prog_acc_pct': s['progressive_accuracy_pct'],
+            'adv_p90': s['adv_p90'],
+            'adv_acc_pct': s['adv_acc_pct'],
+        })
+    df_scores = pd.DataFrame(records)
+    if df_scores.empty:
+        return df_scores
+    def normalize_fixed(series, val_min, val_max):
+        clipped_series = series.clip(lower=val_min, upper=val_max)
+        if val_max == val_min:
+            return pd.Series([70.0] * len(series))
+        return 40 + ((clipped_series - val_min) / (val_max - val_min)) * 60
+    df_scores['xt_norm'] = normalize_fixed(df_scores['xt_p90'], val_min=0.05, val_max=0.45)
+    df_scores['prog_norm'] = normalize_fixed(df_scores['prog_p90'], val_min=1.0, val_max=15.0)
+    df_scores['f3_norm'] = normalize_fixed(df_scores['f3_p90'], val_min=1.0, val_max=15.0)
+    df_scores['pos_pct_norm'] = normalize_fixed(df_scores['pos_pct'], val_min=25.0, val_max=75.0)
+    df_scores['total_p90_norm'] = normalize_fixed(df_scores['total_p90'], val_min=10.0, val_max=85.0)
+    df_scores['neg_xt_norm'] = normalize_fixed(df_scores['neg_xt_p90'], val_min=-0.15, val_max=0.00)
+    df_scores['Grade'] = (
+        df_scores['xt_norm'] * 0.30 +
+        df_scores['prog_norm'] * 0.20 +
+        df_scores['f3_norm'] * 0.20 +
+        df_scores['pos_pct_norm'] * 0.10 +
+        df_scores['total_p90_norm'] * 0.10 +
+        df_scores['neg_xt_norm'] * 0.10
+    )
+    if defensive_dfs_dict is not None:
+        def_bonus_list = []
+        duels_p90_list = []
+        duels_won_pct_list = []
+        interceptions_p90_list = []
+        duels_won_p90_list = []
+        int_xt_avg_list = []
+        funnel_p90_list = []
+        for _, row in df_scores.iterrows():
+            team = row['match'].split('(')[0].strip()
+            bonus = 0
+            dp = 0; dwp = 0; ip = 0
+            dwp90 = 0; int_xt_avg_rounded = 0
+            funnel_p90_val = 0.0
+            for def_name, def_df in defensive_dfs_dict.items():
+                def_team = def_name.split('(')[0].strip()
+                if def_team == team:
+                    mins = get_match_minutes(def_name)
+                    p90 = 90.0 / mins if mins > 0 else 1.0
+                    duels_won = int(def_df["is_duel_won"].sum())
+                    duels_lost = int(def_df["is_duel_lost"].sum())
+                    total_duels = duels_won + duels_lost
+                    dwp = (duels_won / total_duels * 100.0) if total_duels > 0 else 0
+                    dp = round(total_duels * p90, 1)
+                    dwp90 = round(duels_won * p90, 1)
+                    interceptions = int(def_df["is_interception"].sum())
+                    ip = round(interceptions * p90, 1)
+                    funnel_count = int(def_df["in_funnel"].sum())
+                    funnel_p90_val = round(funnel_count * p90, 1)
+                    int_df = def_df[def_df["is_interception"]]
+                    if len(int_df) > 0:
+                        int_xt_vals = [xt_value(float(r["x"]), float(r["y"])) for _, r in int_df.iterrows()]
+                        int_xt_avg = float(np.mean(int_xt_vals)) if int_xt_vals else 0
+                    else:
+                        int_xt_avg = 0
+                    int_xt_avg_rounded = round(int_xt_avg, 3)
+                    duel_bonus_val = (dwp / 100.0) * min(dp / 20.0, 1.0) * 5
+                    int_bonus_val = min(ip / 10.0, 1.0) * (0.5 + int_xt_avg * 2) * 3
+                    bonus = duel_bonus_val + int_bonus_val
+                    break
+            def_bonus_list.append(round(bonus, 2))
+            duels_p90_list.append(dp)
+            duels_won_pct_list.append(round(dwp, 1))
+            interceptions_p90_list.append(ip)
+            duels_won_p90_list.append(dwp90)
+            int_xt_avg_list.append(int_xt_avg_rounded)
+            funnel_p90_list.append(funnel_p90_val)
+        df_scores['def_bonus'] = def_bonus_list
+        df_scores['duels_p90'] = duels_p90_list
+        df_scores['duels_won_pct'] = duels_won_pct_list
+        df_scores['interceptions_p90'] = interceptions_p90_list
+        df_scores['duels_won_p90'] = duels_won_p90_list
+        df_scores['int_xt_avg'] = int_xt_avg_list
+        df_scores['funnel_p90'] = funnel_p90_list
+    else:
+        df_scores['def_bonus'] = 0.0
+        df_scores['duels_p90'] = 0.0
+        df_scores['duels_won_pct'] = 0.0
+        df_scores['interceptions_p90'] = 0.0
+        df_scores['duels_won_p90'] = 0.0
+        df_scores['int_xt_avg'] = 0.0
+        df_scores['funnel_p90'] = 0.0
+    df_scores['pass_grade'] = df_scores['Grade'].round(1).copy()
+    def _norm_def(s, lo, hi):
+        clipped = s.clip(lower=lo, upper=hi)
+        if hi <= lo:
+            return pd.Series([70.0] * len(s))
+        return 40 + ((clipped - lo) / (hi - lo)) * 60
+    df_scores['duels_won_pct_norm'] = _norm_def(df_scores['duels_won_pct'], 0, 100)
+    df_scores['int_xt_norm'] = _norm_def(df_scores['int_xt_avg'], 0, 0.30)
+    df_scores['duels_won_p90_norm'] = _norm_def(df_scores['duels_won_p90'], 0, 15)
+    df_scores['interceptions_p90_norm'] = _norm_def(df_scores['interceptions_p90'], 0, 15)
+    df_scores['funnel_p90_norm'] = _norm_def(df_scores['funnel_p90'], 0, 15)
+    df_scores['def_grade'] = (
+        df_scores['duels_won_pct_norm'] * 0.30 +
+        df_scores['funnel_p90_norm'] * 0.15 +
+        df_scores['int_xt_norm'] * 0.25 +
+        df_scores['duels_won_p90_norm'] * 0.15 +
+        df_scores['interceptions_p90_norm'] * 0.15
+    ).round(1)
+
+    # OFFENSIVE GRADE (touches / final-third presence / duels / shots / finishing)
+    if offensive_dicts is not None:
+        touches_d, duels_d, shots_d = offensive_dicts
+        touches_p90_l = []
+        f3_touches_p90_l = []
+        off_duels_p90_l = []
+        off_duels_won_pct_l = []
+        shots_p90_l = []
+        goals_l = []
+        shots_on_target_pct_l = []
+        for _, row in df_scores.iterrows():
+            team = row['match'].split('(')[0].strip()
+            matched = None
+            for nm in touches_d:
+                if nm.split('(')[0].strip() == team:
+                    matched = nm
+                    break
+            if matched is not None:
+                os_ = compute_offensive_stats(touches_d[matched], duels_d[matched], shots_d[matched], matched)
+            else:
+                os_ = {"touches_p90": 0.0, "f3_touches_p90": 0.0, "off_duels_p90": 0.0,
+                       "off_duels_won_pct": 0.0, "shots_p90": 0.0, "goals": 0, "shots_on_target_pct": 0.0}
+            touches_p90_l.append(os_["touches_p90"])
+            f3_touches_p90_l.append(os_["f3_touches_p90"])
+            off_duels_p90_l.append(os_["off_duels_p90"])
+            off_duels_won_pct_l.append(os_["off_duels_won_pct"])
+            shots_p90_l.append(os_["shots_p90"])
+            goals_l.append(os_["goals"])
+            shots_on_target_pct_l.append(os_["shots_on_target_pct"])
+        df_scores['touches_p90'] = touches_p90_l
+        df_scores['f3_touches_p90'] = f3_touches_p90_l
+        df_scores['off_duels_p90'] = off_duels_p90_l
+        df_scores['off_duels_won_pct'] = off_duels_won_pct_l
+        df_scores['shots_p90'] = shots_p90_l
+        df_scores['goals'] = goals_l
+        df_scores['shots_on_target_pct'] = shots_on_target_pct_l
+        df_scores['touches_norm'] = _norm_def(df_scores['touches_p90'], 20, 70)
+        df_scores['f3_touches_norm'] = _norm_def(df_scores['f3_touches_p90'], 4, 30)
+        df_scores['off_duels_won_norm'] = _norm_def(df_scores['off_duels_won_pct'], 30, 70)
+        df_scores['shots_norm'] = _norm_def(df_scores['shots_p90'], 0.5, 5.0)
+        df_scores['finishing_norm'] = _norm_def(df_scores['shots_on_target_pct'], 20, 70)
+        df_scores['off_grade'] = (
+            df_scores['touches_norm'] * 0.20 +
+            df_scores['f3_touches_norm'] * 0.25 +
+            df_scores['off_duels_won_norm'] * 0.20 +
+            df_scores['shots_norm'] * 0.20 +
+            df_scores['finishing_norm'] * 0.15
+        ).round(1)
+        # Combined Grade: pass / defensive / offensive with equal weights
+        df_scores['Grade'] = (
+            (df_scores['pass_grade'] + df_scores['def_grade'] + df_scores['off_grade']) / 3.0
+        ).round(1)
+    else:
+        df_scores['touches_p90'] = 0.0
+        df_scores['f3_touches_p90'] = 0.0
+        df_scores['off_duels_p90'] = 0.0
+        df_scores['off_duels_won_pct'] = 0.0
+        df_scores['shots_p90'] = 0.0
+        df_scores['goals'] = 0
+        df_scores['shots_on_target_pct'] = 0.0
+        df_scores['off_grade'] = 0.0
+        df_scores['Grade'] = (df_scores['pass_grade'] * 0.5 + df_scores['def_grade'] * 0.5).round(1)
+    return df_scores
 
 def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
     total_actions = len(df)
@@ -752,757 +830,302 @@ def compute_defensive_stats(df: pd.DataFrame, match_name: str) -> dict:
     attacking_half = df[df["is_attacking_half"]]
     actions_attacking = len(attacking_half)
     interceptions_attacking = int(attacking_half["is_interception"].sum())
-    own_half = df[~df["is_attacking_half"]]
-    actions_own = len(own_half)
-    funnel_total = int(df["in_funnel"].sum())
     funnel_df = df[df["in_funnel"]]
+    funnel_actions = len(funnel_df)
     funnel_successful = int(funnel_df["is_duel_won"].sum() + funnel_df["is_interception"].sum())
-    funnel_success_pct = (funnel_successful / funnel_total * 100.0) if funnel_total > 0 else 0.0
+    funnel_success_pct = (funnel_successful / funnel_actions * 100.0) if funnel_actions > 0 else 0.0
     return {
-        "total_actions": total_actions, "total_actions_p90": round(total_actions * p90_factor, 1),
-        "actions_own": actions_own, "actions_own_p90": round(actions_own * p90_factor, 1),
-        "actions_attacking": actions_attacking, "actions_attacking_p90": round(actions_attacking * p90_factor, 1),
-        "total_duels": total_duels, "duels_p90": round(total_duels * p90_factor, 1),
-        "duels_won_pct": round(duels_won_pct, 1), "duels_won": duels_won,
-        "interceptions": interceptions, "interceptions_p90": round(interceptions * p90_factor, 1),
+        "total_actions": total_actions,
+        "total_actions_p90": round(total_actions * p90_factor, 1),
+        "actions_attacking": actions_attacking,
+        "actions_attacking_p90": round(actions_attacking * p90_factor, 1),
+        "total_duels": total_duels,
+        "duels_p90": round(total_duels * p90_factor, 1),
+        "duels_won_pct": round(duels_won_pct, 1),
+        "duels_won": duels_won,
+        "interceptions": interceptions,
+        "interceptions_p90": round(interceptions * p90_factor, 1),
         "interceptions_attacking": interceptions_attacking,
         "interceptions_attacking_p90": round(interceptions_attacking * p90_factor, 1),
-        "funnel_actions": funnel_total, "funnel_actions_p90": round(funnel_total * p90_factor, 1),
+        "funnel_actions": funnel_actions,
+        "funnel_actions_p90": round(funnel_actions * p90_factor, 1),
+        "funnel_successful": funnel_successful,
         "funnel_success_pct": round(funnel_success_pct, 1),
     }
 
-# ── UI HELPERS ─────────────────────────────────────────────────
-# Card text sizes (labels/text only — numbers stay large)
-CARD_TITLE_TEXT = "14px"
-CARD_LABEL_TEXT = "14px"
-CARD_SUBTEXT = "13px"
-CARD_CAPTION = "12px"
-CARD_BADGE_TEXT = "12px"
+def compute_defensive_match_scores(dfs_dict):
+    records = []
+    for m_name, df_m in dfs_dict.items():
+        mins = get_match_minutes(m_name)
+        p90 = 90.0 / mins if mins > 0 else 1.0
+        duels_won = int(df_m["is_duel_won"].sum())
+        duels_lost = int(df_m["is_duel_lost"].sum())
+        total_duels = duels_won + duels_lost
+        interceptions = int(df_m["is_interception"].sum())
+        funnel_count = int(df_m["in_funnel"].sum())
+        records.append({
+            'match': m_name,
+            'duels_p90': round(total_duels * p90, 1),
+            'interceptions_p90': round(interceptions * p90, 1),
+            'funnel_p90': round(funnel_count * p90, 1),
+        })
+    return pd.DataFrame(records)
 
-def _lerp_channel(a: int, b: int, t: float) -> int:
-    return int(round(a + (b - a) * max(0.0, min(1.0, t))))
+def compute_defensive_evolution_df(dfs_dict, df_scores=None):
+    records = []
+    for m_name, df_m in dfs_dict.items():
+        mins = get_match_minutes(m_name)
+        p90 = 90.0 / mins if mins > 0 else 1.0
+        duels_won = int(df_m["is_duel_won"].sum())
+        duels_lost = int(df_m["is_duel_lost"].sum())
+        total_duels = duels_won + duels_lost
+        duels_won_pct = (duels_won / total_duels * 100.0) if total_duels > 0 else 0.0
+        interceptions = int(df_m["is_interception"].sum())
+        attacking_half = df_m[df_m["is_attacking_half"]]
+        actions_attacking = len(attacking_half)
+        int_df = df_m[df_m["is_interception"]]
+        if len(int_df) > 0:
+            int_xt_vals = [xt_value(float(r["x"]), float(r["y"])) for _, r in int_df.iterrows()]
+            int_xt_avg = float(np.mean(int_xt_vals)) if int_xt_vals else 0
+        else:
+            int_xt_avg = 0
+        funnel_count = int(df_m["in_funnel"].sum())
+        grade = None
+        if df_scores is not None and 'Grade' in df_scores.columns and 'match' in df_scores.columns:
+            team = m_name.split('(')[0].strip()
+            for _, row in df_scores.iterrows():
+                if row['match'].split('(')[0].strip() == team:
+                    grade = row['Grade']
+                    break
+        records.append({
+            'match': m_name,
+            'def_actions_p90': round(len(df_m) * p90, 1),
+            'duels_won_p90': round(duels_won * p90, 1),
+            'interceptions_p90': round(interceptions * p90, 1),
+            'duels_won_pct': round(duels_won_pct, 1),
+            'actions_attacking_p90': round(actions_attacking * p90, 1),
+            'int_xt_avg': round(int_xt_avg, 3),
+            'funnel_actions_p90': round(funnel_count * p90, 1),
+            'grade': round(grade, 1) if grade is not None else None,
+        })
+    return pd.DataFrame(records)
 
-def _lerp_hex(hex_a: str, hex_b: str, t: float) -> str:
-    ha, hb = hex_a.lstrip("#"), hex_b.lstrip("#")
-    r = _lerp_channel(int(ha[0:2], 16), int(hb[0:2], 16), t)
-    g = _lerp_channel(int(ha[2:4], 16), int(hb[2:4], 16), t)
-    b = _lerp_channel(int(ha[4:6], 16), int(hb[4:6], 16), t)
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-def _hex_to_rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
-
-C_GREEN_LIGHT = "#86efac"
-C_GREEN_STRONG = "#15803d"
-C_ORANGE_LIGHT = "#fdba74"
-C_RED_DARK = "#7f1d1d"
-C_NEUTRAL = "#94a3b8"
-
-def _diff_gradient_color(diff_pct: float) -> tuple:
-    """Gradient color for diff % and status labels."""
-    if abs(diff_pct) < 0.5:
-        return C_NEUTRAL, "rgba(148,163,184,0.15)"
-    if diff_pct > 0:
-        t = min(diff_pct / 15.0, 1.0)
-        color = _lerp_hex(C_GREEN_LIGHT, C_GREEN_STRONG, t)
-        return color, _hex_to_rgba(color, 0.18)
-    t = min(abs(diff_pct) / 15.0, 1.0)
-    color = _lerp_hex(C_ORANGE_LIGHT, C_RED_DARK, t)
-    return color, _hex_to_rgba(color, 0.18)
-
-def _target_pct_diff(val: float, target: float) -> float:
-    if target <= 0:
-        return 0.0
-    return ((val - target) / target) * 100.0
-
-def _target_diff_badge_html(val: float, target: float) -> str:
-    diff_pct = _target_pct_diff(val, target)
-    if abs(diff_pct) < 0.5:
-        text = "0%"
-    elif diff_pct > 0:
-        text = f"+{diff_pct:.0f}%"
+def compute_offensive_stats(touches_df, duels_df, shots_df, match_name: str) -> dict:
+    if match_name == "All Matches":
+        mins = sum(get_match_minutes(k) for k in touches_dfs_by_match)
     else:
-        text = f"{diff_pct:.0f}%"
-    color, bg = _diff_gradient_color(diff_pct)
-    return (
-        f'<span style="display:inline-block;padding:3px 9px;border-radius:7px;'
-        f'font-size:{CARD_BADGE_TEXT};font-weight:700;color:{color};'
-        f'background:{bg};border:1px solid {color}55">{text}</span>'
-    )
+        mins = get_match_minutes(match_name)
+    p90_factor = 90.0 / mins if mins > 0 else 1.0
+    touches_total = len(touches_df)
+    f3_touches = int(touches_df["is_final_third"].sum()) if touches_total > 0 else 0
+    off_duels_total = len(duels_df)
+    off_duels_won = int(duels_df["is_won"].sum()) if off_duels_total > 0 else 0
+    off_duels_won_pct = (off_duels_won / off_duels_total * 100.0) if off_duels_total > 0 else 0.0
+    shots_total = len(shots_df)
+    goals = int(shots_df["is_goal"].sum()) if shots_total > 0 else 0
+    shots_on_target = int(shots_df["is_on_target"].sum()) if shots_total > 0 else 0
+    shots_on_target_pct = (shots_on_target / shots_total * 100.0) if shots_total > 0 else 0.0
+    return {
+        "touches": touches_total,
+        "touches_p90": round(touches_total * p90_factor, 1),
+        "f3_touches": f3_touches,
+        "f3_touches_p90": round(f3_touches * p90_factor, 1),
+        "off_duels": off_duels_total,
+        "off_duels_p90": round(off_duels_total * p90_factor, 1),
+        "off_duels_won": off_duels_won,
+        "off_duels_won_pct": round(off_duels_won_pct, 1),
+        "shots": shots_total,
+        "shots_p90": round(shots_total * p90_factor, 2),
+        "goals": goals,
+        "shots_on_target": shots_on_target,
+        "shots_on_target_pct": round(shots_on_target_pct, 1),
+    }
 
-def _target_delta_html(val: float, target: float) -> str:
-    return _target_diff_badge_html(val, target)
+# UI HELPERS
+def _safe_pct_diff(a: float, b: float) -> float:
+    base = max(abs(b), 1.0)
+    pct = (abs(a - b) / base) * 100.0
+    return min(pct, 999.0)
+
+def _arrow_html(val_game: float, val_avg: float) -> str:
+    if np.isclose(val_game, val_avg, atol=1e-9):
+        return ""
+    if abs(val_game) < 1 and abs(val_avg) < 1:
+        return ""
+    if val_game > val_avg:
+        pct = _safe_pct_diff(val_game, val_avg)
+        return f' <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#059669;padding:1px 7px;border-radius:10px;vertical-align:middle;line-height:1.6">+{pct:.0f}%</span>'
+    else:
+        pct = _safe_pct_diff(val_avg, val_game)
+        return f' <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#dc2626;padding:1px 7px;border-radius:10px;vertical-align:middle;line-height:1.6">-{pct:.0f}%</span>'
 
 def _accent_rgb(border_color):
     h = border_color.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
-def _rand_target(base: float, key: str, is_pct: bool = False, decimals: int = 1) -> float:
-    """Generate a stable pseudo-random target slightly above or below Hudson's baseline."""
-    rng = np.random.default_rng(2026 + (hash(key) % 10000))
-    sign = int(rng.choice([-1, 1]))
-    if is_pct:
-        target = float(np.clip(base + sign * rng.uniform(2.0, 8.5), 0.0, 100.0))
-    elif base == 0:
-        target = round(rng.uniform(0.5, 2.5), decimals)
-        return target
-    else:
-        target = max(0.0, base + sign * base * rng.uniform(0.06, 0.16))
-    return round(target, decimals)
-
-BENCHMARK_POSITIONS = ("RDMF", "RCMF", "LDMF", "LCMF", "DMF")
-BENCHMARK_FILES = {"MLS": "MLS 1.xlsx", "TOP 5 - UE": "TOP 5 - UE.xlsx"}
-BENCHMARK_MINUTES_RATIO = 0.50
-
-@st.cache_data(show_spinner=False)
-def load_benchmark_targets(source: str) -> dict | None:
-    """Mean per-90 benchmarks from Wyscout export for selected midfield positions."""
-    filename = BENCHMARK_FILES.get(source)
-    if not filename:
-        return None
-    path = Path(filename)
-    if not path.exists():
-        return None
-    try:
-        df = pd.read_excel(path)
-    except ImportError:
-        return None
-    if "Position" not in df.columns or "Minutes played" not in df.columns:
-        return None
-    df = df[df["Position"].isin(BENCHMARK_POSITIONS)].copy()
-    max_mins = float(df["Minutes played"].max()) if len(df) else 0.0
-    if max_mins <= 0:
-        return None
-    min_mins = max_mins * BENCHMARK_MINUTES_RATIO
-    df = df[df["Minutes played"] >= min_mins]
-    if df.empty:
-        return None
-    def_actions = (
-        df["Defensive duels per 90"].fillna(0) + df["Interceptions per 90"].fillna(0)
-    )
-    return {
-        "total_p90": round(float(df["Passes per 90"].mean()), 1),
-        "accuracy_pct": round(float(df["Accurate passes, %"].mean()), 1),
-        "advanced_passes_p90": round(float(df["Progressive passes per 90"].mean()), 1),
-        "advanced_accuracy_pct": round(float(df["Accurate progressive passes, %"].mean()), 1),
-        "total_actions_p90": round(float(def_actions.mean()), 1),
-        "duels_p90": round(float(df["Defensive duels per 90"].mean()), 1),
-        "duels_won_pct": round(float(df["Defensive duels won, %"].mean()), 1),
-        "sample_size": int(len(df)),
-        "minutes_threshold": round(min_mins, 0),
-    }
-
-def build_metric_targets(pass_base: dict, def_base: dict, benchmark_source: str = "MLS") -> dict:
-    bench = load_benchmark_targets(benchmark_source)
-    targets = {
-        "total_p90": bench["total_p90"] if bench else _rand_target(pass_base["total_p90"], "total_p90"),
-        "accuracy_pct": bench["accuracy_pct"] if bench else _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
-        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base.get("prog_p90", 0), "advanced_passes_p90"),
-        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base.get("progressive_accuracy_pct", 0), "advanced_accuracy_pct", is_pct=True),
-        "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
-        "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
-        "total_actions_p90": bench["total_actions_p90"] if bench else _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
-        "duels_p90": bench["duels_p90"] if bench else _rand_target(def_base["duels_p90"], "duels_p90"),
-        "duels_won_pct": bench["duels_won_pct"] if bench else _rand_target(def_base["duels_won_pct"], "duels_won_pct", is_pct=True),
-        "interceptions_p90": _rand_target(def_base["interceptions_p90"], "interceptions_p90"),
-        "funnel_actions_p90": _rand_target(def_base["funnel_actions_p90"], "funnel_actions_p90"),
-        "funnel_success_pct": _rand_target(def_base["funnel_success_pct"], "funnel_success_pct", is_pct=True),
-    }
-    targets["actions_own_p90"] = round(targets["total_actions_p90"] * 0.7, 1)
-    return targets
-
-def _target_progress(val: float, target: float) -> float:
-    if target <= 0:
-        return 100.0 if val >= 0 else 0.0
-    return float(np.clip((val / target) * 100.0, 0.0, 130.0))
-
-def _kpi_status(val: float, target: float) -> tuple:
-    """Return (status_key, label, color) — exceed, hit, close, miss, or miss_target vs target."""
-    diff_pct = _target_pct_diff(val, target)
-    color, _ = _diff_gradient_color(diff_pct)
-    pct = _target_progress(val, target)
-    if diff_pct < -10.0:
-        return "miss_target", "Miss Target", color
-    if val >= target:
-        if diff_pct > 10.0:
-            return "exceed", "Exceed Target", color
-        return "hit", "Target Hit", color
-    if pct >= 85.0:
-        return "close", "Close to Target", color
-    return "miss", "Below Target", color
-
-def _kpi_icon(status_key: str) -> str:
-    if status_key == "exceed":
-        return "✓"
-    if status_key == "hit":
-        return "✓"
-    if status_key == "close":
-        return "~"
-    if status_key == "miss_target":
-        return "X"
-    return "−"
-
-def _metric_gradient_color(val: float, target: float) -> str:
-    color, _ = _diff_gradient_color(_target_pct_diff(val, target))
-    return color
-
-def _item_sep(idx, total):
-    return "" if idx == total - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
-
-def _target_card_shell_html(title, border_color, body_html, compact=False):
+def _modern_card(title, border_color, items, comparison=False):
+    """Sleek, professional card style (glass + gradient + accent).
+    Stats are laid out in line (label on the left, value on the right)."""
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
-    grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.18) 0%, "
-            f"rgba(24,24,38,0.55) 55%, rgba(16,16,26,0.82) 100%)")
-    pad = "14px 16px 12px 16px" if compact else "18px 20px 14px 20px"
-    mb = "8px" if compact else "12px"
+    grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.16) 0%, "
+            f"rgba(24,24,38,0.55) 55%, rgba(16,16,26,0.80) 100%)")
     html = (f'<div style="position:relative;background:{grad};'
-            f'border:1px solid rgba({r},{g},{b},0.35);border-radius:16px;'
-            f'padding:{pad};margin-bottom:{mb};'
-            f'box-shadow:0 10px 28px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06);'
+            f'border:1px solid rgba({r},{g},{b},0.30);border-radius:16px;'
+            f'padding:16px 18px 12px 18px;margin-bottom:12px;'
+            f'box-shadow:0 10px 26px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.05);'
             f'overflow:hidden">')
     html += (f'<div style="position:absolute;top:0;left:0;height:3px;width:100%;'
-             f'background:linear-gradient(90deg, rgba({r},{g},{b},0.95), rgba({r},{g},{b},0.10))"></div>')
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+             f'background:linear-gradient(90deg, rgba({r},{g},{b},0.95), rgba({r},{g},{b},0.12))"></div>')
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
     html += (f'<span style="width:8px;height:8px;border-radius:50%;background:{accent};'
-             f'box-shadow:0 0 10px rgba({r},{g},{b},0.85)"></span>')
-    html += (f'<span style="font-size:{CARD_TITLE_TEXT};font-weight:700;letter-spacing:1.1px;'
+             f'box-shadow:0 0 8px rgba({r},{g},{b},0.85)"></span>')
+    html += (f'<span style="font-size:12px;font-weight:700;letter-spacing:1.2px;'
              f'text-transform:uppercase;color:#eef1f7">{title}</span>')
     html += '</div>'
-    html += body_html
-    html += '</div>'
-    return html
-
-def _target_card_shell(title, border_color, body_html, compact=False):
-    st.markdown(_target_card_shell_html(title, border_color, body_html, compact=compact), unsafe_allow_html=True)
-
-def _body_data_simple(items):
-    body = ""
     for idx, item in enumerate(items):
-        label, disp_val = item[0], item[3]
-        extra = item[5] if len(item) > 5 else ""
-        body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">'
-        body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
-        body += f'<span style="font-size:26px;font-weight:800;color:#ffffff;white-space:nowrap">{disp_val}</span>'
-        body += '</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
-        body += '</div>'
-    return body
-
-def _body_target_row_header(label, right_html=""):
-    return (
-        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">'
-        f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
-        f'{right_html}</div>'
-    )
-
-def _body_target_a(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        pct = _target_progress(val, target)
-        bar_pct = min(pct, 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        bar_color = _metric_gradient_color(val, target)
-        body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += _body_target_row_header(
-            label,
-            (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
-             f'{status_label} · Target <b style="color:#eef1f7">{disp_tgt}</b></span>'),
-        )
-        body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
-                 f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
-        body += (f'<div style="display:flex;justify-content:flex-end;align-items:center;margin-top:4px">'
-                 f'{_target_diff_badge_html(val, target)}</div></div>')
-    return body
-
-def _body_target_b(border_color, items):
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgba({r},{g},{b},0.85)"
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        status_key, status_label, status_color = _kpi_status(val, target)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:10px;"
-        body += f'<div style="{sep}">'
-        body += _body_target_row_header(
-            label,
-            f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">{status_label}</span>',
-        )
-        body += (f'<div style="display:flex;align-items:center;justify-content:center;gap:8px;'
-                 f'border-radius:10px;padding:8px 12px;border:1px solid rgba({r},{g},{b},0.25);'
-                 f'background:rgba({r},{g},{b},0.12)">'
-                 f'<span style="font-size:{CARD_CAPTION};font-weight:700;letter-spacing:1px;color:{accent}">TARGET</span>'
-                 f'<span style="font-size:22px;font-weight:800;color:{accent}">{disp_tgt}</span></div>')
-        body += f'<div style="display:flex;justify-content:center;gap:8px;align-items:center;margin-top:6px">{_target_diff_badge_html(val, target)}</div></div>'
-    return body
-
-def _body_target_c(border_color, items):
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgb({r},{g},{b})"
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        pct = min(_target_progress(val, target), 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        ring_color = _metric_gradient_color(val, target)
-        body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += '<div style="display:flex;align-items:center;gap:10px">'
-        body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
-        body += (f'<div style="width:38px;height:38px;border-radius:50%;flex-shrink:0;'
-                 f'background:conic-gradient({ring_color} {pct:.1f}%, rgba(255,255,255,0.08) 0);'
-                 f'display:flex;align-items:center;justify-content:center">'
-                 f'<div style="width:28px;height:28px;border-radius:50%;background:#14141f;'
-                 f'display:flex;align-items:center;justify-content:center;'
-                 f'font-size:8px;font-weight:800;color:#ffffff">·</div></div>')
-        body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
-                 f'{status_label}</span>')
-        body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{accent};white-space:nowrap">'
-                 f'Target {disp_tgt}</span>')
-        body += _target_diff_badge_html(val, target)
-        body += '</div></div>'
-    return body
-
-def _body_target_d(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        status_key, status_label, status_color = _kpi_status(val, target)
-        icon = _kpi_icon(status_key)
-        body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += '<div style="display:flex;align-items:center;gap:10px">'
-        body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
-        body += (f'<div style="flex-shrink:0;width:36px;height:36px;border-radius:10px;'
-                 f'background:rgba({int(status_color[1:3],16)},{int(status_color[3:5],16)},{int(status_color[5:7],16)},0.18);'
-                 f'border:2px solid {status_color};display:flex;align-items:center;justify-content:center;'
-                 f'font-size:18px;font-weight:800;color:{status_color}">{icon}</div>')
-        body += (f'<div style="display:flex;align-items:center;gap:8px">'
-                 f'<div style="font-size:18px;font-weight:800;color:#eef1f7">{disp_tgt}</div>'
-                 f'{_target_diff_badge_html(val, target)}</div>'
-                 f'<div style="font-size:{CARD_CAPTION};font-weight:700;color:{status_color}">{status_label}</div></div></div>')
-    return body
-
-def _body_target_e(border_color, items):
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgb({r},{g},{b})"
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        pct = _target_progress(val, target)
-        bar_pct = min(pct, 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        max_scale = max(target * 1.15, val, target, 0.01)
-        target_pos = min((target / max_scale) * 100.0, 100.0)
-        bar_color = _metric_gradient_color(val, target)
-        body += f'<div style="{_item_sep(idx, len(items))}">'
-        body += _body_target_row_header(
-            label,
-            (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
-             f'{status_label} · Target <b style="color:#eef1f7">{disp_tgt}</b></span>'),
-        )
-        body += '<div style="position:relative;height:12px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
-        body += (f'<div style="position:absolute;top:0;left:0;height:100%;width:{bar_pct:.1f}%;'
-                 f'background:{bar_color};border-radius:999px;opacity:0.90"></div>')
-        body += (f'<div style="position:absolute;top:-2px;left:{target_pos:.1f}%;width:2px;height:16px;'
-                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%)"></div>')
-        body += '</div>'
-        body += f'<div style="display:flex;justify-content:flex-end;margin-top:4px">{_target_diff_badge_html(val, target)}</div></div>'
-    return body
-
-def _body_target_f(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_tgt = item[4]
-        _, status_label, status_color = _kpi_status(val, target)
-        pct = min(_target_progress(val, target), 100.0)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);"
-        body += f'<div style="display:flex;align-items:center;gap:10px;{sep}">'
-        body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
-        body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
-                 f'{status_label}</span>')
-        body += f'<span style="font-size:20px;font-weight:800;color:{status_color};white-space:nowrap">{disp_tgt}</span>'
-        body += _target_diff_badge_html(val, target)
-        body += '</div>'
-    return body
-
-TARGET_BODY_BUILDERS = {
-    "A — Progress Bar": _body_target_a,
-    "B — Side by Side": _body_target_b,
-    "C — Gauge Pill": _body_target_c,
-    "D — KPI Badge": _body_target_d,
-    "E — Bullet Chart": _body_target_e,
-    "F — Scorecard": _body_target_f,
-}
-
-def _combined_body_a(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        pct = _target_progress(val, target)
-        bar_pct = min(pct, 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        bar_color = _metric_gradient_color(val, target)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
-        body += f'<div style="{sep}">'
-        body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
-        body += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
-        body += f'<span style="font-size:24px;font-weight:800;color:#ffffff">{disp_val}</span>'
-        body += (f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7">'
-                 f'<span style="color:{status_color};font-weight:700">{status_label}</span> · '
-                 f'Target <b style="color:#eef1f7">{disp_tgt}</b></span>')
-        body += '</div>'
-        body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
-                 f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
-        body += f'<div style="display:flex;justify-content:flex-end;margin-top:5px">{_target_diff_badge_html(val, target)}</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
-        body += '</div>'
-    return body
-
-def _combined_body_b(border_color, items):
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgba({r},{g},{b},0.85)"
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        _, status_label, status_color = _kpi_status(val, target)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
-        body += f'<div style="{sep}">'
-        body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-                 f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda">{label}</span>'
-                 f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color}">{status_label}</span></div>')
-        body += (f'<div style="display:flex;border-radius:12px;overflow:hidden;'
-                 f'border:1px solid rgba({r},{g},{b},0.25);background:rgba(0,0,0,0.20)">')
-        body += ('<div style="flex:1;padding:12px 10px;text-align:center">'
-                 f'<div style="font-size:{CARD_CAPTION};font-weight:700;letter-spacing:1.2px;color:#94a3b8">HUDSON</div>'
-                 f'<div style="font-size:26px;font-weight:800;color:#ffffff;line-height:1.1;margin-top:4px">{disp_val}</div></div>')
-        body += f'<div style="width:1px;background:rgba(255,255,255,0.10)"></div>'
-        body += (f'<div style="flex:1;padding:12px 10px;text-align:center;background:rgba({r},{g},{b},0.12)">'
-                 f'<div style="font-size:{CARD_CAPTION};font-weight:700;letter-spacing:1.2px;color:{accent}">TARGET</div>'
-                 f'<div style="font-size:26px;font-weight:800;color:{accent};line-height:1.1;margin-top:4px">{disp_tgt}</div></div>')
-        body += '</div>'
-        body += f'<div style="display:flex;justify-content:center;gap:8px;align-items:center;margin-top:6px">{_target_diff_badge_html(val, target)}</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px;text-align:center">{extra}</div>'
-        body += '</div>'
-    return body
-
-def _combined_body_c(border_color, items):
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgb({r},{g},{b})"
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        pct = min(_target_progress(val, target), 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        ring_color = _metric_gradient_color(val, target)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
-        body += f'<div style="{sep}">'
-        body += '<div style="display:flex;align-items:center;gap:10px">'
-        body += (f'<div style="width:46px;height:46px;border-radius:50%;flex-shrink:0;'
-                 f'background:conic-gradient({ring_color} {pct:.1f}%, rgba(255,255,255,0.08) 0);'
-                 f'display:flex;align-items:center;justify-content:center">'
-                 f'<div style="width:34px;height:34px;border-radius:50%;background:#14141f;'
-                 f'display:flex;align-items:center;justify-content:center;'
-                 f'font-size:8px;font-weight:800;color:#ffffff">·</div></div>')
-        body += '<div style="flex:1;min-width:0">'
-        body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
-                 f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda">{label}</span>'
-                 f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color}">{status_label}</span></div>')
-        body += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
-        body += (f'<span style="font-size:20px;font-weight:800;color:#ffffff;background:rgba({r},{g},{b},0.18);'
-                 f'border:1px solid rgba({r},{g},{b},0.35);border-radius:999px;padding:2px 12px">{disp_val}</span>')
-        body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{accent};background:rgba({r},{g},{b},0.10);'
-                 f'border:1px dashed rgba({r},{g},{b},0.45);border-radius:999px;padding:4px 10px">'
-                 f'Target {disp_tgt}</span>')
-        body += f'{_target_diff_badge_html(val, target)}</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px">{extra}</div>'
-        body += '</div></div></div>'
-    return body
-
-def _combined_body_d(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        status_key, status_label, status_color = _kpi_status(val, target)
-        icon = _kpi_icon(status_key)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
-        body += f'<div style="{sep}">'
-        body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
-        body += '<div style="display:flex;align-items:center;gap:12px">'
-        body += (f'<div style="flex-shrink:0;width:52px;height:52px;border-radius:12px;'
-                 f'background:rgba({int(status_color[1:3],16)},{int(status_color[3:5],16)},{int(status_color[5:7],16)},0.18);'
-                 f'border:2px solid {status_color};display:flex;align-items:center;justify-content:center;'
-                 f'font-size:22px;font-weight:800;color:{status_color}">{icon}</div>')
-        body += '<div style="flex:1;min-width:0">'
-        body += (f'<div style="font-size:24px;font-weight:800;color:#ffffff;line-height:1.1">{disp_val}'
-                 f'<span style="font-size:{CARD_SUBTEXT};font-weight:600;color:#64748b;margin-left:8px">/ {disp_tgt}</span></div>')
-        body += (f'<div style="margin-top:4px;display:flex;align-items:center;gap:8px">'
-                 f'<span style="color:{status_color};font-size:{CARD_SUBTEXT};font-weight:700">{status_label}</span>'
-                 f'{_target_diff_badge_html(val, target)}</div>')
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px">{extra}</div>'
-        body += '</div></div></div>'
-    return body
-
-def _combined_body_e(border_color, items):
-    body = ""
-    for idx, item in enumerate(items):
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        pct = _target_progress(val, target)
-        bar_pct = min(pct, 100.0)
-        _, status_label, status_color = _kpi_status(val, target)
-        max_scale = max(target * 1.15, val, target, 0.01)
-        target_pos = min((target / max_scale) * 100.0, 100.0)
-        bar_color = _metric_gradient_color(val, target)
-        sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
-        body += f'<div style="{sep}">'
-        body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-        body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda">{label}</span>'
-        body += f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};background:rgba(255,255,255,0.06);border-radius:999px;padding:2px 8px">{status_label}</span>'
-        body += '</div>'
-        body += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
-        body += f'<span style="font-size:22px;font-weight:800;color:#ffffff">{disp_val}</span>'
-        body += f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7">Target <b style="color:#eef1f7">{disp_tgt}</b></span>'
-        body += '</div>'
-        body += '<div style="position:relative;height:14px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:visible">'
-        body += (f'<div style="position:absolute;top:0;left:0;height:100%;width:{bar_pct:.1f}%;'
-                 f'background:{bar_color};border-radius:999px;opacity:0.90"></div>')
-        body += (f'<div style="position:absolute;top:-3px;left:{target_pos:.1f}%;width:3px;height:20px;'
-                 f'background:#ffffff;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,0.5)"></div>')
-        body += '</div>'
-        body += f'<div style="display:flex;justify-content:flex-end;margin-top:5px">{_target_diff_badge_html(val, target)}</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px;text-align:right">{extra}</div>'
-        body += '</div>'
-    return body
-
-def _combined_body_f(border_color, items):
-    body = '<div style="display:flex;flex-direction:column;gap:10px">'
-    for item in items:
-        label, val, target = item[0], float(item[1]), float(item[2])
-        disp_val, disp_tgt = item[3], item[4]
-        extra = item[5] if len(item) > 5 else ""
-        _, status_label, status_color = _kpi_status(val, target)
-        glow = f"0 0 12px {status_color}55"
-        body += (f'<div style="background:rgba(0,0,0,0.25);border:1px solid {status_color};'
-                 f'border-radius:12px;padding:12px 14px;box-shadow:{glow}">')
-        body += '<div style="display:flex;justify-content:space-between;align-items:center">'
-        body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;max-width:55%">{label}</div>'
-        body += f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};text-transform:uppercase">{status_label}</span>'
-        body += '</div>'
-        body += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
-        body += f'<span style="font-size:28px;font-weight:800;color:#ffffff;line-height:1">{disp_val}</span>'
-        body += (f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7">target <b style="color:{status_color}">{disp_tgt}</b></span>')
-        body += _target_diff_badge_html(val, target)
-        body += '</div>'
-        if extra:
-            body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px">{extra}</div>'
-        body += '</div>'
-    body += '</div>'
-    return body
-
-COMBINED_BODY_BUILDERS = {
-    "A — Progress Bar": _combined_body_a,
-    "B — Side by Side": _combined_body_b,
-    "C — Gauge Pill": _combined_body_c,
-    "D — KPI Badge": _combined_body_d,
-    "E — Bullet Chart": _combined_body_e,
-    "F — Scorecard": _combined_body_f,
-}
-
-def _target_card_style_a(title, border_color, items, layout="combined"):
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_a(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_a(border_color, items))
-
-def _target_card_style_b(title, border_color, items, layout="combined"):
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_b(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_b(border_color, items))
-
-def _target_card_style_c(title, border_color, items, layout="combined"):
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_c(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_c(border_color, items))
-
-def _target_card_style_d(title, border_color, items, layout="combined"):
-    """KPI badge — traffic-light status (Hit / Close / Miss) with value vs target."""
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_d(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_d(border_color, items))
-
-def _target_card_style_e(title, border_color, items, layout="combined"):
-    """Bullet chart — value bar with target marker and zone coloring."""
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_e(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_e(border_color, items))
-
-def _target_card_style_f(title, border_color, items, layout="combined"):
-    """Scorecard — compact KPI tiles with hit/close/miss border glow."""
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_f(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, _combined_body_f(border_color, items))
-
-TARGET_CARD_STYLES = {
-    "A — Progress Bar": _target_card_style_a,
-    "B — Side by Side": _target_card_style_b,
-    "C — Gauge Pill": _target_card_style_c,
-    "D — KPI Badge": _target_card_style_d,
-    "E — Bullet Chart": _target_card_style_e,
-    "F — Scorecard": _target_card_style_f,
-}
-
-CARD_EXPORT_WIDTH = 560
-CARD_EXPORT_SCALE = 3
-CARD_EXPORT_DPI = 300
-
-def build_target_card_html(title, border_color, items, style_key, layout_mode="combined") -> str:
-    target_builder = TARGET_BODY_BUILDERS.get(style_key, _body_target_a)
-    combined_builder = COMBINED_BODY_BUILDERS.get(style_key, _combined_body_a)
-    if layout_mode == "separated":
-        inner = (
-            _target_card_shell_html(title, border_color, _body_data_simple(items))
-            + _target_card_shell_html(
-                f"{title} — Target", border_color,
-                target_builder(border_color, items), compact=True,
-            )
-        )
-    else:
-        inner = _target_card_shell_html(title, border_color, combined_builder(border_color, items))
-    return (
-        f'<!DOCTYPE html><html><head><meta charset="utf-8">'
-        f'<style>html,body{{margin:0;padding:24px;background:#0f0f1a;width:{CARD_EXPORT_WIDTH}px;'
-        f'font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;}}</style>'
-        f'</head><body>{inner}</body></html>'
-    )
-
-def _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI) -> bytes:
-    from matplotlib.patches import FancyBboxPatch
-    r, g, b = _accent_rgb(border_color)
-    accent = (r / 255.0, g / 255.0, b / 255.0)
-    rows = []
-    if layout_mode == "separated":
-        for item in items:
-            rows.append((item[0], str(item[3]), "", "#eef1f7"))
-        for item in items:
-            _, status_label, status_color = _kpi_status(float(item[1]), float(item[2]))
-            diff = _target_pct_diff(float(item[1]), float(item[2]))
-            badge = f"+{diff:.0f}%" if diff > 0 else f"{diff:.0f}%"
-            rows.append((item[0], str(item[3]), f"Target {item[4]} · {status_label} · {badge}", status_color))
-    else:
-        for item in items:
-            _, status_label, status_color = _kpi_status(float(item[1]), float(item[2]))
-            diff = _target_pct_diff(float(item[1]), float(item[2]))
-            badge = f"+{diff:.0f}%" if diff > 0 else f"{diff:.0f}%"
-            rows.append((item[0], str(item[3]), f"Target {item[4]} · {status_label} · {badge}", status_color))
-    fig_w = (CARD_EXPORT_WIDTH / CARD_EXPORT_DPI) * CARD_EXPORT_SCALE
-    fig_h = (1.35 + len(rows) * 0.58) * CARD_EXPORT_SCALE
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=CARD_EXPORT_DPI)
-    fig.patch.set_facecolor("#0f0f1a")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-    card = FancyBboxPatch(
-        (0.03, 0.04), 0.94, 0.92, boxstyle="round,pad=0.02,rounding_size=0.03",
-        linewidth=1.2, edgecolor=accent, facecolor=(0.10, 0.10, 0.16, 1.0),
-    )
-    ax.add_patch(card)
-    ax.plot([0.05, 0.95], [0.90, 0.90], color=accent, linewidth=2.5)
-    ax.text(0.06, 0.94, title.upper(), color="#eef1f7", fontsize=13, fontweight="bold", va="top")
-    y = 0.84
-    for label, value, subline, color in rows:
-        ax.text(0.07, y, label, color="#c7cdda", fontsize=10, fontweight="bold", va="top")
-        ax.text(0.93, y, value, color="#ffffff", fontsize=16, fontweight="bold", ha="right", va="top")
-        if subline:
-            ax.text(0.07, y - 0.055, subline, color=color, fontsize=9, va="top")
-            y -= 0.13
+        label = item[0]
+        sub_lines = []
+        if comparison:
+            val_game = item[1]
+            val_avg = item[2]
+            value_html = item[3] if len(item) > 3 else str(val_game)
+            disp_avg = item[4] if len(item) > 4 else str(val_avg)
+            tooltip = item[5] if len(item) > 5 else ""
+            extra = item[6] if len(item) > 6 else ""
+            arrow = _arrow_html(float(val_game), float(val_avg))
+            sub_lines.append(f"AVG {disp_avg}")
+            if extra:
+                sub_lines.append(extra)
         else:
-            y -= 0.09
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, facecolor="#0f0f1a", bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
+            value_html = item[1]
+            sub = item[2] if len(item) > 2 else ""
+            tooltip = item[3] if len(item) > 3 else ""
+            arrow = ""
+            if sub:
+                sub_lines.append(sub)
+        is_last = idx == len(items) - 1
+        row_style = "" if is_last else ("margin-bottom:12px;padding-bottom:12px;"
+                                        "border-bottom:1px solid rgba(255,255,255,0.06)")
+        title_attr = f' title="{tooltip}"' if tooltip else ""
+        cursor = "cursor:help;" if tooltip else ""
+        html += f'<div style="{row_style}">'
+        html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+        html += (f'<span style="font-size:12.5px;font-weight:600;color:#c7cdda;{cursor}"{title_attr}>{label}</span>')
+        html += (f'<span style="font-size:22px;font-weight:800;color:#ffffff;line-height:1.1;'
+                 f'white-space:nowrap">{value_html}{arrow}</span>')
+        html += '</div>'
+        for sl in sub_lines:
+            html += f'<div style="text-align:right;font-size:11px;color:#8b93a7;margin-top:2px">{sl}</div>'
+        html += '</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
-def export_target_card_png(
-    title, border_color, items, style_key, layout_mode="combined",
-) -> bytes:
-    return _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI)
+def section_card(title, border_color, items):
+    if MODERN_CARDS:
+        _modern_card(title, border_color, items, comparison=False)
+        return
+    bg = _hex_to_rgba(border_color, 0.55)
+    bd = _hex_to_rgba(border_color, 0.30)
+    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:10px;padding:14px;margin-bottom:8px">'
+    html += f'<div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:10px;letter-spacing:0.3px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px">{title}</div>'
+    html += f'<div style="opacity:0.88">'
+    for idx, item in enumerate(items):
+        label = item[0]
+        value = item[1]
+        sub = item[2] if len(item) > 2 else ""
+        tooltip = item[3] if len(item) > 3 else ""
+        is_last = idx == len(items) - 1
+        sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
+        html += f'<div {sep}>'
+        html += f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        if tooltip:
+            label_html = f'<span style="font-size:15px;color:#ffffff;font-weight:600;cursor:help;border-bottom:1px dotted rgba(255,255,255,0.15)" title="{tooltip}">{label}</span>'
+            label_html += f'<span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;font-size:9px;font-weight:700;color:#888;background:rgba(0,0,0,0.25);margin-left:4px;cursor:help;vertical-align:middle" title="{tooltip}">?</span>'
+            html += f'<div>{label_html}</div>'
+        else:
+            html += f'<div style="font-size:15px;color:#ffffff;font-weight:600">{label}</div>'
+        html += f'<div style="text-align:right">'
+        html += f'<div style="font-size:20px;font-weight:800;color:#ffffff;line-height:1.2">{value}</div>'
+        if sub:
+            html += f'<div style="font-size:12px;font-style:italic;color:#ffffff;opacity:0.55;margin-top:1px">{sub}</div>'
+        html += '</div>'
+        html += '</div>'
+        html += '</div>'
+    html += '</div></div>'
+    st.markdown(html, unsafe_allow_html=True)
 
-def target_section_card(title, border_color, items, style_key, layout_mode="combined", export_key=None):
-    renderer = TARGET_CARD_STYLES.get(style_key, _target_card_style_a)
-    renderer(title, border_color, items, layout=layout_mode)
-    if export_key:
-        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title.strip()) or "card"
-        png_bytes = export_target_card_png(title, border_color, items, style_key, layout_mode)
-        st.download_button(
-            label="Export card PNG (HD)",
-            data=png_bytes,
-            file_name=f"Hudson_{safe_name}.png",
-            mime="image/png",
-            key=export_key,
-            use_container_width=True,
-        )
+def cmp_section_card(title, border_color, items):
+    if MODERN_CARDS:
+        _modern_card(title, border_color, items, comparison=True)
+        return
+    bg = _hex_to_rgba(border_color, 0.55)
+    bd = _hex_to_rgba(border_color, 0.30)
+    html = f'<div style="background:{bg};border:1px solid {bd};border-radius:10px;padding:14px;margin-bottom:8px">'
+    html += f'<div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:10px;letter-spacing:0.3px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px">{title}</div>'
+    html += f'<div style="opacity:0.88">'
+    for idx, item in enumerate(items):
+        label = item[0]
+        val_game = item[1]
+        val_avg = item[2]
+        disp_game = item[3] if len(item) > 3 else str(val_game)
+        disp_avg = item[4] if len(item) > 4 else str(val_avg)
+        tooltip = item[5] if len(item) > 5 else ""
+        extra = item[6] if len(item) > 6 else ""
+        arrow = _arrow_html(float(val_game), float(val_avg))
+        is_last = idx == len(items) - 1
+        sep = "" if is_last else 'style="border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:6px;margin-bottom:6px"'
+        html += f'<div {sep}>'
+        html += f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        if tooltip:
+            label_html = f'<span style="font-size:15px;color:#ffffff;font-weight:600;cursor:help;border-bottom:1px dotted rgba(255,255,255,0.15)" title="{tooltip}">{label}</span>'
+            label_html += f'<span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;font-size:9px;font-weight:700;color:#888;background:rgba(0,0,0,0.25);margin-left:4px;cursor:help;vertical-align:middle" title="{tooltip}">?</span>'
+            html += f'<div>{label_html}</div>'
+        else:
+            html += f'<div style="font-size:15px;color:#ffffff;font-weight:600">{label}</div>'
+        html += f'<div style="text-align:right">'
+        html += f'<div style="font-size:20px;font-weight:800;color:#ffffff;line-height:1.2">{disp_game}{arrow}</div>'
+        html += f'<div style="font-size:11px;color:#ffffff;opacity:0.55;margin-top:2px">AVG: {disp_avg}</div>'
+        if extra:
+            html += f'<div style="font-size:11px;color:#ffffff;opacity:0.55;margin-top:1px">{extra}</div>'
+        html += '</div>'
+        html += '</div>'
+        html += '</div>'
+    html += '</div></div>'
+    st.markdown(html, unsafe_allow_html=True)
 
-# ── DRAW HELPERS (PITCH) ───────────────────────────────────────
+# DRAW HELPERS (PITCH)
 def _base_pitch(bg="#1a1a2e"):
     pitch = Pitch(pitch_type="statsbomb", pitch_color=bg, line_color="#ffffff", line_alpha=0.95)
     fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
-    fig.set_facecolor(bg); fig.set_dpi(FIG_DPI)
+    fig.set_facecolor(bg)
+    fig.set_dpi(FIG_DPI)
     ax.axvline(x=FINAL_THIRD_LINE_X, color="#ffffff", lw=1.2, alpha=0.40, linestyle="--")
     ax.axvline(x=HALF_LINE_X, color="#ffffff", lw=0.7, alpha=0.12, linestyle="--")
     return fig, ax, pitch
 
 def _attack_arrow(fig, has_cbar=False):
     ox = -0.04 if has_cbar else 0.0
-    fig.patches.append(FancyArrowPatch((0.44 + ox, 0.045), (0.56 + ox, 0.045), transform=fig.transFigure,
-                                       arrowstyle="-|>", mutation_scale=11, linewidth=1.6, color="#aaaaaa"))
-    fig.text(0.50 + ox, 0.012, "Attacking Direction", ha="center", va="bottom", transform=fig.transFigure,
-             fontsize=7.5, color="#aaaaaa")
+    fig.patches.append(FancyArrowPatch(
+        (0.44 + ox, 0.045), (0.56 + ox, 0.045),
+        transform=fig.transFigure, arrowstyle="-|>", mutation_scale=11,
+        linewidth=1.6, color="#aaaaaa"
+    ))
+    fig.text(0.50 + ox, 0.012, "Attacking Direction", ha="center", va="bottom",
+             transform=fig.transFigure, fontsize=7.5, color="#aaaaaa")
 
 def _save_fig(fig):
-    fig.canvas.draw(); buf = BytesIO()
+    fig.canvas.draw()
+    buf = BytesIO()
     fig.savefig(buf, format="png", dpi=FIG_DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
-    buf.seek(0); return Image.open(buf)
+    buf.seek(0)
+    return Image.open(buf)
 
 def draw_pass_map(df):
     fig, ax, pitch = _base_pitch()
     for _, row in df.iterrows():
-        is_lost = not row["is_won"]; is_prog = bool(row["progressive"])
+        is_lost = not row["is_won"]
+        is_prog = bool(row["progressive"])
         if is_lost:
             color, alpha = COLOR_FAIL, 0.72
         elif is_prog:
@@ -1510,588 +1133,722 @@ def draw_pass_map(df):
         else:
             color, alpha = COLOR_SUCCESS, ALPHA_SUCCESS
         pitch.arrows(row["x_start"], row["y_start"], row["x_end"], row["y_end"],
-                     color=color, width=1.3, headwidth=2.0, headlength=2.0, ax=ax, zorder=3, alpha=alpha)
-        pitch.scatter(row["x_start"], row["y_start"], s=32, marker="o", color=color,
-                      edgecolors="white", linewidths=0.6, ax=ax, zorder=6, alpha=alpha)
-    leg = ax.legend(handles=[
-        Line2D([0],[0],color=COLOR_SUCCESS,lw=2.0,label="Completed",alpha=0.65),
-        Line2D([0],[0],color=COLOR_PROGRESSIVE,lw=2.0,label="Progressive",alpha=0.90),
-        Line2D([0],[0],color=COLOR_FAIL,lw=2.0,label="Incomplete",alpha=0.90)
-    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",
-       edgecolor="#444466",fontsize=6.5,labelspacing=0.35,borderpad=0.4)
-    for t in leg.get_texts(): t.set_color("white")
-    leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
+                     color=color, width=1.3, headwidth=2.0, headlength=2.0,
+                     ax=ax, zorder=3, alpha=alpha)
+        pitch.scatter(row["x_start"], row["y_start"], s=32, marker="o",
+                      color=color, edgecolors="white", linewidths=0.6,
+                      ax=ax, zorder=6, alpha=alpha)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], color=COLOR_SUCCESS, lw=2.0, label="Completed", alpha=0.65),
+            Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=2.0, label="Progressive", alpha=0.90),
+            Line2D([0], [0], color=COLOR_FAIL, lw=2.0, label="Incomplete", alpha=0.90),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4
+    )
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
     return _save_fig(fig), fig
 
 def draw_corridor_heatmap(df):
     df_s = df[df["is_won"]].copy()
     x_bins = np.linspace(0.0, FIELD_X, 7)
-    corridors = {"left": (LANE_LEFT_MIN, FIELD_Y), "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN), "right": (0.0, LANE_RIGHT_MAX)}
+    corridors = {
+        "left": (LANE_LEFT_MIN, FIELD_Y),
+        "center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
+        "right": (0.0, LANE_RIGHT_MAX),
+    }
     counts = {}
     for cname, (y0, y1) in corridors.items():
         arr = np.zeros(6, dtype=int)
         for i in range(6):
             x0_, x1_ = x_bins[i], x_bins[i + 1]
-            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) & (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
+            arr[i] = int(((df_s["x_end"] >= x0_) & (df_s["x_end"] < x1_) &
+                          (df_s["y_end"] >= y0) & (df_s["y_end"] < y1)).sum())
         counts[cname] = arr
-    all_vals = np.concatenate([counts[c] for c in counts]); vmax = max(1, int(all_vals.max()))
+    all_vals = np.concatenate([counts[c] for c in counts])
+    vmax = max(1, int(all_vals.max()))
     cmap = LinearSegmentedColormap.from_list("wr", ["#ffffff", "#ffecec", "#ffbfbf", "#ff8080", "#ff3b3b", "#ff0000"])
-    norm = Normalize(vmin=0, vmax=vmax); threshold = max(1, vmax * 0.35)
+    norm = Normalize(vmin=0, vmax=vmax)
+    threshold = max(1, vmax * 0.35)
     fig, ax, pitch = _base_pitch()
     for cname, (y0, y1) in corridors.items():
         for i in range(6):
-            x0_, x1_ = x_bins[i], x_bins[i + 1]; value = counts[cname][i]
+            x0_, x1_ = x_bins[i], x_bins[i + 1]
+            value = counts[cname][i]
             ax.add_patch(Rectangle((x0_, y0), x1_ - x0_, y1 - y0,
-                                   facecolor=cmap(norm(value)), edgecolor=(1,1,1,0.12), lw=0.5, alpha=0.95, zorder=2))
-            ax.text((x0_+x1_)/2, (y0+y1)/2, str(value), ha="center", va="center",
+                                   facecolor=cmap(norm(value)),
+                                   edgecolor=(1, 1, 1, 0.12), lw=0.5, alpha=0.95, zorder=2))
+            ax.text((x0_ + x1_) / 2, (y0 + y1) / 2, str(value),
+                    ha="center", va="center",
                     color="#000000" if value <= threshold else "#ffffff",
-                    fontsize=9, fontweight="700" if value>=vmax*0.5 else "600", zorder=4)
+                    fontsize=9, fontweight="700" if value >= vmax * 0.5 else "600", zorder=4)
     ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
     ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5, alpha=0.15, linestyle="--", zorder=3)
-    _attack_arrow(fig); return _save_fig(fig), fig
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
 
 def _draw_comet_arrow(ax, x0, y0, x1, y1, color):
-    segs = 12; ts = np.linspace(0.0, 1.0, segs + 1)
+    segs = 12
+    ts = np.linspace(0.0, 1.0, segs + 1)
     for i in range(segs):
-        t0, t1 = ts[i], ts[i+1]; xa=x0+(x1-x0)*t0; ya=y0+(y1-y0)*t0; xb=x0+(x1-x0)*t1; yb=y0+(y1-y0)*t1
-        alpha = 0.85*(0.15+0.85*t1); lw = 2.5*(0.80+0.20*t1)
-        ax.plot([xa,xb],[ya,yb],color=color,linewidth=lw,alpha=alpha,zorder=4,solid_capstyle="round")
-    ax.scatter(x0,y0,s=20,marker="o",facecolors="none",edgecolors=color,linewidths=1.5,zorder=5,alpha=0.85)
-    ax.scatter(x1,y1,s=32,marker="o",facecolors=color,edgecolors="white",linewidths=0.9,zorder=6,alpha=0.85)
+        t0, t1 = ts[i], ts[i + 1]
+        xa = x0 + (x1 - x0) * t0; ya = y0 + (y1 - y0) * t0
+        xb = x0 + (x1 - x0) * t1; yb = y0 + (y1 - y0) * t1
+        alpha = 0.85 * (0.15 + 0.85 * t1)
+        lw = 2.5 * (0.80 + 0.20 * t1)
+        ax.plot([xa, xb], [ya, yb], color=color, linewidth=lw, alpha=alpha, zorder=4, solid_capstyle="round")
+    ax.scatter(x0, y0, s=20, marker="o", facecolors="none", edgecolors=color, linewidths=1.5, zorder=5, alpha=0.85)
+    ax.scatter(x1, y1, s=32, marker="o", facecolors=color, edgecolors="white", linewidths=0.9, zorder=6, alpha=0.85)
 
 def draw_top_xt_map(df, top_n=5):
     fig, ax, pitch = _base_pitch()
-    top_passes = (df[(df["is_won"])&(df["delta_xt_adj"]>0)].sort_values("delta_xt_adj",ascending=False).head(top_n).copy().reset_index(drop=True))
-    cursor_points = []
+    top_passes = (df[(df["is_won"]) & (df["delta_xt_adj"] > 0)]
+            .sort_values("delta_xt_adj", ascending=False).head(top_n).copy().reset_index(drop=True))
     if not top_passes.empty:
         for _, row in top_passes.iterrows():
-            val = float(row["delta_xt_adj"]); color = CMAP_TOP10(NORM_TOP10(np.clip(val,0.05,0.40)))
-            _draw_comet_arrow(ax,float(row["x_start"]),float(row["y_start"]),float(row["x_end"]),float(row["y_end"]),color)
-            match_name = row.get("match", "")
-            pt = ax.scatter(float(row["x_start"]), float(row["y_start"]), s=20, marker="o",
-                           facecolors="none", edgecolors=color, linewidths=1.5, zorder=5, alpha=0, visible=False)
-            cursor_points.append((pt, f"xT: {val:.3f}\nMatch: {match_name}"))
-        crs = mplcursors.cursor([p[0] for p in cursor_points], hover=True)
-        @crs.connect("add")
-        def _(sel):
-            sel.annotation.set_text(cursor_points[sel.index][1])
-            sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#5b9bd5", alpha=0.95)
-            sel.annotation.arrow_patch.set(connectionstyle="arc3,rad=0.2", fc="#1a1a2e", ec="#5b9bd5")
-    sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10,norm=NORM_TOP10)
-    cbar=fig.colorbar(sm,ax=ax,fraction=0.020,pad=0.02,shrink=0.60); cbar.set_label("Pass Impact",color="#ffffff",fontsize=8)
-    cbar.ax.yaxis.set_tick_params(color="#ffffff",labelsize=7); plt.setp(plt.getp(cbar.ax.axes,"yticklabels"),color="#ffffff")
-    _attack_arrow(fig,has_cbar=True); return _save_fig(fig), fig
+            val = float(row["delta_xt_adj"])
+            color = CMAP_TOP10(NORM_TOP10(np.clip(val, 0.05, 0.40)))
+            _draw_comet_arrow(ax, float(row["x_start"]), float(row["y_start"]),
+                              float(row["x_end"]), float(row["y_end"]), color)
+        sm = plt.cm.ScalarMappable(cmap=CMAP_TOP10, norm=NORM_TOP10)
+        cbar = fig.colorbar(sm, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
+        cbar.set_label("Pass Impact", color="#ffffff", fontsize=8)
+        cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
+        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
+    _attack_arrow(fig, has_cbar=True)
+    return _save_fig(fig), fig
 
-# ── DEFENSIVE PITCH DRAW HELPERS ───────────────────────────────
-COLOR_DUEL_WON="#10b981"; COLOR_DUEL_LOST="#E07070"; COLOR_INTERCEPTION="#2F80ED"
+# DEFENSIVE PITCH DRAW HELPERS
+COLOR_DUEL_WON = "#10b981"
+COLOR_DUEL_LOST = "#E07070"
+COLOR_INTERCEPTION = "#2F80ED"
 
 def draw_defensive_map(df):
     fig, ax, pitch = _base_pitch()
     for _, row in df.iterrows():
         if row["is_duel_won"]:
-            color,marker,s,alpha=COLOR_DUEL_WON,"o",90,0.85
+            color, marker, s, alpha = COLOR_DUEL_WON, "o", 90, 0.85
         elif row["is_duel_lost"]:
-            color,marker,s,alpha=COLOR_DUEL_LOST,"X",100,0.85
+            color, marker, s, alpha = COLOR_DUEL_LOST, "X", 100, 0.85
         else:
-            color,marker,s,alpha=COLOR_INTERCEPTION,"^",80,0.85
-        pitch.scatter(row["x"],row["y"],s=s,marker=marker,color=color,edgecolors="white",linewidths=0.8,ax=ax,zorder=6,alpha=alpha)
-    leg=ax.legend(handles=[
-        Line2D([0],[0],marker="o",color="w",markerfacecolor=COLOR_DUEL_WON,markersize=7,label="Duel Won",alpha=0.90),
-        Line2D([0],[0],marker="X",color="w",markerfacecolor=COLOR_DUEL_LOST,markersize=8,label="Duel Lost",alpha=0.90),
-        Line2D([0],[0],marker="^",color="w",markerfacecolor=COLOR_INTERCEPTION,markersize=7,label="Interception",alpha=0.90)
-    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,labelspacing=0.35,borderpad=0.4)
-    for t in leg.get_texts(): t.set_color("white")
-    leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
+            color, marker, s, alpha = COLOR_INTERCEPTION, "^", 80, 0.85
+        pitch.scatter(row["x"], row["y"], s=s, marker=marker, color=color,
+                      edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=alpha)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_DUEL_WON, markersize=7, label="Duel Won", alpha=0.90),
+            Line2D([0], [0], marker="X", color="w", markerfacecolor=COLOR_DUEL_LOST, markersize=8, label="Duel Lost", alpha=0.90),
+            Line2D([0], [0], marker="^", color="w", markerfacecolor=COLOR_INTERCEPTION, markersize=7, label="Interception", alpha=0.90),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4
+    )
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
     return _save_fig(fig), fig
 
 def draw_funnel_protection_map(df):
+    """Map showing defensive actions: golden stars inside funnel zone, faded outside."""
     fig, ax, pitch = _base_pitch()
-    funnel_rect=Rectangle((0,PENALTY_AREA_Y_MIN),FUNNEL_X_EXTEND,PENALTY_AREA_Y_MAX-PENALTY_AREA_Y_MIN,
-                          facecolor="#ffd700",edgecolor="#ffd700",lw=1.5,linestyle="--",alpha=0.12,zorder=2)
+    funnel_rect = Rectangle(
+        (0, PENALTY_AREA_Y_MIN), FUNNEL_X_EXTEND, PENALTY_AREA_Y_MAX - PENALTY_AREA_Y_MIN,
+        facecolor="#ffd700", edgecolor="#ffd700", lw=1.5, linestyle="--", alpha=0.12, zorder=2
+    )
     ax.add_patch(funnel_rect)
-    cursor_points = []
     for _, row in df.iterrows():
-        x,y=float(row["x"]),float(row["y"]); in_funnel=bool(row.get("in_funnel",is_in_funnel_zone(x,y)))
-        match_name = row.get("match", "")
-        action_type = row["type"]
+        x, y = float(row["x"]), float(row["y"])
+        in_funnel = bool(row.get("in_funnel", is_in_funnel_zone(x, y)))
         if in_funnel:
-            marker,s,color,edge="*",120,"#ffd700","#b8860b"
-            pt = ax.scatter(x, y, s=1, marker="o", color="none", edgecolors="none", linewidths=0, zorder=1, alpha=0, visible=False)
-            cursor_points.append((pt, f"{action_type}\nMatch: {match_name}"))
+            marker, s, color, edge = "*", 120, "#ffd700", "#b8860b"
         else:
-            marker,s,color,edge="o",60,"#888888","#555555"
-        pitch.scatter(x,y,s=s,marker=marker,color=color,edgecolors=edge,linewidths=0.5,ax=ax,zorder=6,alpha=0.85)
-    if cursor_points:
-        crs = mplcursors.cursor([p[0] for p in cursor_points], hover=True)
-        @crs.connect("add")
-        def _(sel):
-            sel.annotation.set_text(cursor_points[sel.index][1])
-            sel.annotation.get_bbox_patch().set(fc="#1a1a2e", ec="#ffd700", alpha=0.95)
-            sel.annotation.arrow_patch.set(connectionstyle="arc3,rad=0.2", fc="#1a1a2e", ec="#ffd700")
-    leg=ax.legend(handles=[
-        Line2D([0],[0],marker="*",color="w",markerfacecolor="#ffd700",markersize=9,label="Funnel Action",alpha=0.95),
-        Line2D([0],[0],marker="o",color="w",markerfacecolor="#888888",markersize=6,label="Other Action",alpha=0.50)
-    ],loc="upper left",bbox_to_anchor=(0.01,0.99),frameon=True,facecolor="#1a1a2e",edgecolor="#444466",fontsize=6.5,labelspacing=0.35,borderpad=0.4)
-    for t in leg.get_texts(): t.set_color("white")
-    leg.get_frame().set_alpha(0.90); _attack_arrow(fig)
+            marker, s, color, edge = "o", 60, "#888888", "#555555"
+        pitch.scatter(x, y, s=s, marker=marker, color=color,
+                      edgecolors=edge, linewidths=0.5, ax=ax, zorder=6, alpha=0.85)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], marker="*", color="w", markerfacecolor="#ffd700", markersize=9, label="Funnel Action", alpha=0.95),
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="#888888", markersize=6, label="Other Action", alpha=0.50),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4
+    )
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
     return _save_fig(fig), fig
 
 def draw_defensive_heatmap(df):
-    corridors={"Right":(LANE_LEFT_MIN,FIELD_Y),"Center":(LANE_RIGHT_MAX,LANE_LEFT_MIN),"Left":(0.0,LANE_RIGHT_MAX)}
-    corridor_data={}
-    for cname,(y0,y1) in corridors.items():
-        mask=(df["y"]>=y0)&(df["y"]<y1); val=int(mask.sum())
-        duel_mask=mask&df["is_duel"]; duels_won=int((df.loc[duel_mask,"is_duel_won"]).sum()); duels_lost=int((df.loc[duel_mask,"is_duel_lost"]).sum())
-        duel_pct=(duels_won/(duels_won+duels_lost)*100.0) if (duels_won+duels_lost)>0 else None
-        corridor_data[cname]={"total":val,"duels_won":duels_won,"duels_lost":duels_lost,"duel_pct":duel_pct}
-    all_vals=[corridor_data[c]["total"] for c in corridors]; vmax=max(1,max(all_vals))
-    cmap=LinearSegmentedColormap.from_list("def_cm_blue",["#6ab0f5","#3a8ad0","#2a5a8a","#1a3058","#0a1428"],N=20)
-    norm=Normalize(vmin=0,vmax=max(vmax,1)); threshold=max(1,vmax*0.40)
-    fig,ax,pitch=_base_pitch()
-    for cname,(y0,y1) in corridors.items():
-        c=corridor_data[cname]; value=c["total"]
-        rect=Rectangle((0,y0),FIELD_X,y1-y0,facecolor=cmap(norm(value)),edgecolor=(1,1,1,0.08),lw=0.5,alpha=0.95,zorder=2)
-        ax.add_patch(rect)
-        duel_pct = c['duel_pct']
-        if duel_pct is not None:
-            label=f"{cname}\nTotal: {value}\nWon: {c['duels_won']}/{c['duels_won']+c['duels_lost']} ({duel_pct:.0f}%)"
-        else:
-            label=f"{cname}\nTotal: {value}"
-        ax.text(FIELD_X/2,(y0+y1)/2,label,ha="center",va="center",
-                color="#000000" if value<=threshold else "#ffffff",fontsize=9,fontweight="600",zorder=4)
-    ax.axhline(y=LANE_LEFT_MIN,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
-    ax.axhline(y=LANE_RIGHT_MAX,color="#ffffff",lw=0.5,alpha=0.20,linestyle="--",zorder=3)
-    _attack_arrow(fig); return _save_fig(fig), fig
-
-# ── PDF REPORT ─────────────────────────────────────────────────
-PDF_BG = "#0f0f1a"
-PDF_CARD_BG = "#1a1a2e"
-PDF_TEXT = "#eef1f7"
-PDF_MUTED = "#8b93a7"
-PDF_LABEL = "#c7cdda"
-
-def _fig_to_png_bytes(fig):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=140, facecolor=fig.get_facecolor(), bbox_inches="tight")
-    buf.seek(0)
-    return buf
-
-def _pil_to_png_bytes(pil_img):
-    buf = BytesIO()
-    pil_img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
-def _pdf_draw_dark_page(canvas, doc):
-    canvas.saveState()
-    canvas.setFillColor(rl_colors.HexColor(PDF_BG))
-    canvas.rect(0, 0, doc.pagesize[0], doc.pagesize[1], fill=1, stroke=0)
-    canvas.restoreState()
-
-def _pdf_styles():
-    styles = getSampleStyleSheet()
-    return {
-        "title": ParagraphStyle(
-            "PdfTitle", parent=styles["Heading1"],
-            fontSize=20, textColor=rl_colors.HexColor(PDF_TEXT),
-            spaceAfter=4, alignment=1, fontName="Helvetica-Bold",
-        ),
-        "sub": ParagraphStyle(
-            "PdfSub", parent=styles["Normal"],
-            fontSize=9, textColor=rl_colors.HexColor(PDF_MUTED), alignment=1,
-        ),
-        "section": ParagraphStyle(
-            "PdfSection", parent=styles["Heading2"],
-            fontSize=13, textColor=rl_colors.HexColor(PASS_TONES[1]),
-            spaceBefore=0, spaceAfter=6, fontName="Helvetica-Bold",
-        ),
-        "map_label": ParagraphStyle(
-            "PdfMapLabel", parent=styles["Normal"],
-            fontSize=10, textColor=rl_colors.HexColor("#cccccc"),
-            spaceAfter=3, fontName="Helvetica-Bold",
-        ),
-        "card_title": ParagraphStyle(
-            "PdfCardTitle", parent=styles["Normal"],
-            fontSize=9, textColor=rl_colors.white, fontName="Helvetica-Bold",
-            leading=11,
-        ),
-        "metric_label": ParagraphStyle(
-            "PdfMetricLabel", parent=styles["Normal"],
-            fontSize=9, textColor=rl_colors.HexColor(PDF_LABEL), leading=11,
-        ),
-        "metric_tgt": ParagraphStyle(
-            "PdfMetricTgt", parent=styles["Normal"],
-            fontSize=8, textColor=rl_colors.HexColor(PDF_MUTED), leading=10,
-        ),
+    corridors = {
+        "Left": (LANE_LEFT_MIN, FIELD_Y),
+        "Center": (LANE_RIGHT_MAX, LANE_LEFT_MIN),
+        "Right": (0.0, LANE_RIGHT_MAX),
     }
-
-def _pdf_status_text(val, target):
-    diff_pct = _target_pct_diff(val, target)
-    color, _ = _diff_gradient_color(diff_pct)
-    pct = _target_progress(val, target)
-    if diff_pct < -10.0:
-        return "Miss Target", color
-    if val >= target:
-        if diff_pct > 10.0:
-            return "Exceed Target", color
-        return "Target Hit", color
-    if pct >= 85.0:
-        return "Close to Target", color
-    return "Below Target", color
-
-def _pdf_usable_width():
-    return landscape(A4)[0] - 2.0 * cm
-
-def _pdf_col_width(n_cols: int = 3, gap_cm: float = 0.15):
-    return (_pdf_usable_width() - gap_cm * cm * (n_cols - 1)) / n_cols
-
-def _pdf_rl_image(img_buf, target_width):
-    img_buf.seek(0)
-    with Image.open(img_buf) as pil_img:
-        iw, ih = pil_img.size
-    img_buf.seek(0)
-    w = target_width
-    h = w * (ih / max(iw, 1))
-    return RLImage(img_buf, width=w, height=h), h
-
-def _pdf_diff_badge_text(val, target):
-    diff_pct = _target_pct_diff(val, target)
-    if abs(diff_pct) < 0.5:
-        text = "0%"
-    elif diff_pct > 0:
-        text = f"+{diff_pct:.0f}%"
-    else:
-        text = f"{diff_pct:.0f}%"
-    color, _ = _diff_gradient_color(diff_pct)
-    return text, color
-
-def _pdf_dark_card(accent_hex, title, metrics, pstyles, card_width):
-    """metrics: list of (label, disp_val, disp_tgt, val_float, target_float)"""
-    label_w = card_width * 0.56
-    val_w = card_width * 0.44
-    rows = [[Paragraph(title.upper(), pstyles["card_title"]), ""]]
-    row_idx = 0
-    style_cmds = [
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_CARD_BG)),
-        ("BOX", (0, 0), (-1, -1), 0.8, rl_colors.HexColor(accent_hex)),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor(accent_hex)),
-        ("SPAN", (0, 0), (-1, 0)),
-    ]
-    for label, disp_val, disp_tgt, val, target in metrics:
-        row_idx += 1
-        diff_text, diff_color = _pdf_diff_badge_text(val, target)
-        cell = [
-            Paragraph(f'<b>{label}</b>', pstyles["metric_label"]),
-            Paragraph(
-                f'<font color="{PDF_TEXT}"><b>{disp_val}</b></font>  '
-                f'<font color="{PDF_MUTED}">/ {disp_tgt}</font>  '
-                f'<font color="{diff_color}"><b>{diff_text}</b></font>',
-                pstyles["metric_tgt"],
-            ),
-        ]
-        rows.append(cell)
-        style_cmds.append(("LINEABOVE", (0, row_idx), (-1, row_idx), 0.3, rl_colors.HexColor("#2a2a3e")))
-    tbl = Table(rows, colWidths=[label_w, val_w])
-    tbl.setStyle(TableStyle(style_cmds))
-    return tbl
-
-def _pdf_map_cell(label, img_buf, pstyles, col_width):
-    rl_img, _ = _pdf_rl_image(img_buf, col_width)
-    cell = Table([
-        [Paragraph(label, pstyles["map_label"])],
-        [rl_img],
-    ], colWidths=[col_width])
-    cell.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
-    ]))
-    return cell
-
-def _pdf_dashboard_section(section_title, map_entries, stat_cards, pstyles):
-    col_w = _pdf_col_width(3)
-    map_cells = [_pdf_map_cell(label, buf, pstyles, col_w) for label, buf in map_entries]
-    maps_row = Table([map_cells], colWidths=[col_w] * 3, hAlign="LEFT")
-    maps_row.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-2, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
-    ]))
-    cards_row = Table([stat_cards], colWidths=[col_w] * 3, hAlign="LEFT")
-    cards_row.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-2, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(PDF_BG)),
-    ]))
-    return [
-        Paragraph(section_title, pstyles["section"]),
-        maps_row,
-        Spacer(1, 0.12 * cm),
-        cards_row,
-    ]
-
-def generate_season_pdf(card_tones=None, benchmark_source="MLS"):
-    if not PDF_AVAILABLE:
-        raise RuntimeError("reportlab is not installed. Run: pip install reportlab")
-    tones = card_tones or PASS_TONES
-
-    df_pass = pd.concat(dfs_by_match.values(), ignore_index=True)
-    df_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
-
-    pass_stats_list = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
-    s_pass = {}
-    for k in pass_stats_list[0].keys():
-        if isinstance(pass_stats_list[0][k], (int, float)):
-            s_pass[k] = sum(s[k] for s in pass_stats_list) / len(pass_stats_list)
-        else:
-            s_pass[k] = 0
-
-    def_all = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
-    d_def = {}
-    for k in def_all[0].keys():
-        if isinstance(def_all[0][k], (int, float)):
-            d_def[k] = sum(s[k] for s in def_all) / len(def_all)
-        else:
-            d_def[k] = 0
-
-    _pb, _db = {}, {}
-    if pass_stats_list:
-        for k in pass_stats_list[0].keys():
-            if isinstance(pass_stats_list[0][k], (int, float)):
-                _pb[k] = sum(s[k] for s in pass_stats_list) / len(pass_stats_list)
-    if def_all:
-        for k in def_all[0].keys():
-            if isinstance(def_all[0][k], (int, float)):
-                _db[k] = sum(s[k] for s in def_all) / len(def_all)
-    T_pdf = build_metric_targets(_pb, _db, benchmark_source)
-
-    img_pm, fig_pm = draw_pass_map(df_pass); plt.close(fig_pm)
-    img_ht, fig_ht = draw_corridor_heatmap(df_pass); plt.close(fig_ht)
-    _, fig_xt = draw_top_xt_map(df_pass, top_n=10)
-    buf_xt = _fig_to_png_bytes(fig_xt); plt.close(fig_xt)
-    img_def, fig_def = draw_defensive_map(df_def); plt.close(fig_def)
-    img_dhm, fig_dhm = draw_defensive_heatmap(df_def); plt.close(fig_dhm)
-    img_fun, fig_fun = draw_funnel_protection_map(df_def); plt.close(fig_fun)
-
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4),
-        leftMargin=1.0 * cm, rightMargin=1.0 * cm,
-        topMargin=0.8 * cm, bottomMargin=0.8 * cm,
+    corridor_data = {}
+    for cname, (y0, y1) in corridors.items():
+        mask = (df["y"] >= y0) & (df["y"] < y1)
+        corr_df = df[mask]
+        total = len(corr_df)
+        duels_total = int(corr_df["is_duel"].sum())
+        duels_won = int(corr_df["is_duel_won"].sum())
+        corridor_data[cname] = {"count": total, "duels_won": duels_won, "duels_total": duels_total}
+    all_counts = [d["count"] for d in corridor_data.values()]
+    vmax = max(1, max(all_counts))
+    # Blue ramp: light blue for few actions -> very dark blue for many actions
+    cmap_def = LinearSegmentedColormap.from_list(
+        "def_corr", ["#dbeafe", "#93c5fd", "#3b82f6", "#1d4ed8", "#162e7a", "#0a1840"]
     )
-    ps = _pdf_styles()
-    col_w = _pdf_col_width(3)
+    norm = Normalize(vmin=0, vmax=vmax)
+    threshold = max(1, vmax * 0.45)
+    fig, ax, pitch = _base_pitch()
+    for cname, (y0, y1) in corridors.items():
+        d = corridor_data[cname]
+        value = d["count"]
+        ax.add_patch(Rectangle((0, y0), FIELD_X, y1 - y0,
+                               facecolor=cmap_def(norm(value)),
+                               edgecolor=(1, 1, 1, 0.15), lw=0.5, alpha=0.95, zorder=2))
+        duel_pct = (d["duels_won"] / d["duels_total"] * 100) if d["duels_total"] > 0 else None
+        if duel_pct is not None:
+            label = f"{cname}\nTotal: {value}\nWon: {d['duels_won']}/{d['duels_total']} ({duel_pct:.0f}%)"
+        else:
+            label = f"{cname}\nTotal: {value}"
+        ax.text(FIELD_X / 2, (y0 + y1) / 2, label,
+                ha="center", va="center",
+                color="#000000" if value <= threshold else "#ffffff",
+                fontsize=9, fontweight="600", zorder=4)
+    ax.axhline(y=LANE_LEFT_MIN, color="#ffffff", lw=0.5, alpha=0.20, linestyle="--", zorder=3)
+    ax.axhline(y=LANE_RIGHT_MAX, color="#ffffff", lw=0.5, alpha=0.20, linestyle="--", zorder=3)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
 
-    pass_maps = [
-        ("Pass Map", _pil_to_png_bytes(img_pm)),
-        ("Zone Heatmap (Destination)", _pil_to_png_bytes(img_ht)),
-        ("Top 10 Pass Impact", buf_xt),
-    ]
-    pass_cards = [
-        _pdf_dark_card(tones[0], "Overview", [
-            ("Total Passes Per Game", f"{s_pass['total_p90']:.1f}", f"{T_pdf['total_p90']:.1f}",
-             s_pass["total_p90"], T_pdf["total_p90"]),
-            ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
-             s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
-        ], ps, col_w),
-        _pdf_dark_card(tones[1], "Progressive", [
-            ("Progressive Passes Per Game", f"{s_pass['prog_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
-             s_pass["prog_p90"], T_pdf["advanced_passes_p90"]),
-            ("% Progressive Accuracy", f"{s_pass['progressive_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
-             s_pass["progressive_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
-        ], ps, col_w),
-        _pdf_dark_card(tones[2], "Impact", [
-            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
-             s_pass["xt_p90"], T_pdf["xt_p90"]),
-            ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%", f"{T_pdf['pos_pct']:.1f}%",
-             s_pass["pos_pct"], T_pdf["pos_pct"]),
-        ], ps, col_w),
-    ]
+def draw_defensive_xt_map(df):
+    fig, ax, pitch = _base_pitch()
+    vals = [xt_value(float(row["x"]), float(row["y"])) for _, row in df.iterrows()]
+    vals = np.array(vals)
+    if len(vals) > 0:
+        vmin, vmax_vals = float(vals.min()), float(vals.max())
+        norm_def = Normalize(vmin=vmin, vmax=vmax_vals) if vmax_vals > vmin else Normalize(vmin=0, vmax=1)
+        cmap_def_xt = LinearSegmentedColormap.from_list("def_xt", ["#2d1b69", "#4a148c", "#7b1fa2", "#ab47bc", "#ce93d8"])
+        for i, (_, row) in enumerate(df.iterrows()):
+            marker, s = ("o", 85) if row["is_duel_won"] else ("X", 95) if row["is_duel_lost"] else ("^", 75)
+            pitch.scatter(row["x"], row["y"], s=s, marker=marker,
+                          color=cmap_def_xt(norm_def(vals[i])),
+                          edgecolors="white", linewidths=0.6, ax=ax, zorder=6, alpha=0.85)
+        sm = plt.cm.ScalarMappable(cmap=cmap_def_xt, norm=norm_def)
+        cbar = fig.colorbar(sm, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
+        cbar.set_label("xT Threat", color="#ffffff", fontsize=8)
+        cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
+        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
+    _attack_arrow(fig, has_cbar=True)
+    return _save_fig(fig), fig
 
-    def_maps = [
-        ("Defensive Actions Map", _pil_to_png_bytes(img_def)),
-        ("Defensive Heatmap", _pil_to_png_bytes(img_dhm)),
-        ("Funnel Protection Actions", _pil_to_png_bytes(img_fun)),
-    ]
-    def_cards = [
-        _pdf_dark_card(tones[0], "Overview", [
-            ("Defensive Actions Per Game", f"{d_def['total_actions_p90']:.1f}", f"{T_pdf['total_actions_p90']:.1f}",
-             d_def["total_actions_p90"], T_pdf["total_actions_p90"]),
-            ("Actions in Own Half Per Game", f"{d_def['actions_own_p90']:.1f}", f"{T_pdf['actions_own_p90']:.1f}",
-             d_def["actions_own_p90"], T_pdf["actions_own_p90"]),
-        ], ps, col_w),
-        _pdf_dark_card(tones[1], "Duels", [
-            ("Defensive Duels Per Game", f"{d_def['duels_p90']:.1f}", f"{T_pdf['duels_p90']:.1f}",
-             d_def["duels_p90"], T_pdf["duels_p90"]),
-            ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%", f"{T_pdf['duels_won_pct']:.1f}%",
-             d_def["duels_won_pct"], T_pdf["duels_won_pct"]),
-        ], ps, col_w),
-        _pdf_dark_card(tones[2], "Funnel Protection", [
-            ("Funnel Protection Actions Per Game", f"{d_def['funnel_actions_p90']:.1f}",
-             f"{T_pdf['funnel_actions_p90']:.1f}", d_def["funnel_actions_p90"], T_pdf["funnel_actions_p90"]),
-            ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%", f"{T_pdf['funnel_success_pct']:.1f}%",
-             d_def["funnel_success_pct"], T_pdf["funnel_success_pct"]),
-        ], ps, col_w),
-    ]
+# OFFENSIVE PITCH DRAW HELPERS
+COLOR_OFF_DUEL_WON = "#10b981"
+COLOR_OFF_DUEL_LOST = "#E07070"
+COLOR_GOAL = "#ffd700"
+COLOR_SHOT_ON = "#10b981"
+COLOR_SHOT_OFF = "#E07070"
+COLOR_SHOT_BLOCKED = "#a78bfa"
 
-    story = [
-        Paragraph("Hudson Cicala — Season Dashboard", ps["title"]),
-        Paragraph("2026 Season • All Matches Report", ps["sub"]),
-        Spacer(1, 0.08 * cm),
+def draw_offensive_duels_map(df):
+    fig, ax, pitch = _base_pitch()
+    for _, row in df.iterrows():
+        if row["is_won"]:
+            color, marker, s = COLOR_OFF_DUEL_WON, "o", 90
+        else:
+            color, marker, s = COLOR_OFF_DUEL_LOST, "X", 100
+        pitch.scatter(row["x"], row["y"], s=s, marker=marker, color=color,
+                      edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=0.85)
+    leg = ax.legend(
+        handles=[
+            Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_OFF_DUEL_WON, markersize=7, label="Duel Won", alpha=0.90),
+            Line2D([0], [0], marker="X", color="w", markerfacecolor=COLOR_OFF_DUEL_LOST, markersize=8, label="Duel Lost", alpha=0.90),
+        ],
+        loc="upper left", bbox_to_anchor=(0.01, 0.99),
+        frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+        fontsize=6.5, labelspacing=0.35, borderpad=0.4
+    )
+    for t in leg.get_texts():
+        t.set_color("white")
+    leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
+
+def draw_touches_heatmap(df):
+    fig, ax, pitch = _base_pitch()
+    if len(df) > 0:
+        cmap_touch = LinearSegmentedColormap.from_list(
+            "touch", ["#252845", "#2e3560", "#3b82f6", "#22d3ee", "#fde047"]
+        )
+        bin_stat = pitch.bin_statistic(df["x"].values, df["y"].values, statistic="count", bins=(6, 4))
+        mesh = pitch.heatmap(
+            bin_stat, ax=ax, cmap=cmap_touch,
+            edgecolors="#2a3050", linewidth=0.6,
+            alpha=0.88, zorder=2,
+        )
+        cbar = fig.colorbar(mesh, ax=ax, fraction=0.020, pad=0.02, shrink=0.60)
+        cbar.set_label("Touches", color="#ffffff", fontsize=8)
+        cbar.ax.yaxis.set_tick_params(color="#ffffff", labelsize=7)
+        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#ffffff")
+    _attack_arrow(fig, has_cbar=True)
+    return _save_fig(fig), fig
+
+def _base_attacking_half_pitch(bg="#1a1a2e"):
+    pitch = Pitch(
+        pitch_type="statsbomb", pitch_color=bg, line_color="#ffffff", line_alpha=0.95,
+        half=True,
+    )
+    fig, ax = pitch.draw(figsize=(FIG_W, FIG_H))
+    fig.set_facecolor(bg)
+    fig.set_dpi(FIG_DPI)
+    return fig, ax, pitch
+
+
+def draw_shots_map(df):
+    """Attacking half-pitch with shot locations (same footprint as other pitch maps)."""
+    df = df[df["x"] >= SHOT_HALF_X].copy()
+    fig, ax, pitch = _base_attacking_half_pitch()
+    groups = [
+        ("Goal", df[df["is_goal"]], COLOR_GOAL, "*", 220),
+        ("On Target", df[(~df["is_goal"]) & (df["is_on_target"])], COLOR_SHOT_ON, "o", 90),
+        ("Blocked", df[df["is_blocked"]], COLOR_SHOT_BLOCKED, "D", 80),
+        ("Off Target", df[df["is_off_target"]], COLOR_SHOT_OFF, "x", 100),
     ]
-    story.extend(_pdf_dashboard_section("Passing Analysis", pass_maps, pass_cards, ps))
-    story.append(PageBreak())
-    story.append(Paragraph("Hudson Cicala — Season Dashboard", ps["title"]))
-    story.append(Paragraph("2026 Season • All Matches Report", ps["sub"]))
-    story.append(Spacer(1, 0.08 * cm))
-    story.extend(_pdf_dashboard_section("Defensive Actions", def_maps, def_cards, ps))
+    legend_handles = []
+    for name, gdf, color, marker, size in groups:
+        if gdf.empty:
+            continue
+        pitch.scatter(
+            gdf["x"], gdf["y"], s=size, marker=marker, color=color,
+            edgecolors="white", linewidths=0.8, ax=ax, zorder=6, alpha=0.88,
+        )
+        legend_handles.append(
+            Line2D([0], [0], marker=marker, color="w", markerfacecolor=color,
+                   markersize=7, label=name, alpha=0.90)
+        )
+    if legend_handles:
+        leg = ax.legend(
+            handles=legend_handles,
+            loc="upper left", bbox_to_anchor=(0.01, 0.99),
+            frameon=True, facecolor="#1a1a2e", edgecolor="#444466",
+            fontsize=6.5, labelspacing=0.35, borderpad=0.4,
+        )
+        for t in leg.get_texts():
+            t.set_color("white")
+        leg.get_frame().set_alpha(0.90)
+    _attack_arrow(fig)
+    return _save_fig(fig), fig
 
-    doc.build(story, onFirstPage=_pdf_draw_dark_page, onLaterPages=_pdf_draw_dark_page)
-    buf.seek(0)
-    return buf.getvalue()
+# PLOTLY CHARTS
+def _avg_reference_traces(fig, x_labels, series, avg_mode, value_fmt):
+    """Add a reference line: flat average or rolling moving average (same layout)."""
+    if avg_mode == "Moving Average":
+        roll = series.rolling(window=5, min_periods=1).mean()
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=roll,
+            mode='lines', line=dict(color="rgba(255, 215, 0, 0.35)", width=1.8, dash='dash'),
+            name="Moving Avg (5)", hoverinfo='skip'
+        ))
+    else:
+        mean_val = series.mean()
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=[mean_val] * len(x_labels),
+            mode='lines', line=dict(color="rgba(255, 215, 0, 0.25)", width=1.5, dash='dash'),
+            name=f"Avg: {mean_val:{value_fmt}}", hoverinfo='skip'
+        ))
 
-# ── SIDEBAR ────────────────────────────────────────────────────
+
+GRADE_OPTIONS = {
+    "Combined Grade": ("Grade", "#1a56db"),
+    "Pass Grade": ("pass_grade", "#10b981"),
+    "Defensive Grade": ("def_grade", "#a78bfa"),
+    "Offensive Grade": ("off_grade", "#f59e0b"),
+}
+
+
+def draw_grade_chart(df_scores, grade_label="Combined Grade", avg_mode="Average"):
+    col, color = GRADE_OPTIONS.get(grade_label, ("Grade", "#1a56db"))
+    fig = go.Figure()
+    x_labels = [f"Match {i+1}" for i in range(len(df_scores))]
+    y = df_scores[col]
+    rgb = tuple(int(color.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
+    fig.add_trace(go.Scatter(
+        x=x_labels, y=y,
+        customdata=df_scores["match"],
+        mode='lines+markers',
+        line=dict(color=color, width=3, shape='spline'),
+        marker=dict(size=8, color=color),
+        fill='tozeroy', fillcolor=f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.05)',
+        name=grade_label,
+        hovertemplate="<span style='color:#ffd700'>%{customdata}</span><br>" + grade_label + ": %{y:.1f}"
+    ))
+    _avg_reference_traces(fig, x_labels, y, avg_mode, ".1f")
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a1a2e", plot_bgcolor="#1a1a2e",
+        height=370, margin=dict(l=20, r=20, t=40, b=20),
+        yaxis=dict(range=[40, 100], showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+        xaxis=dict(showgrid=False, zeroline=False),
+        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title=dict(text=grade_label, font=dict(size=14, color="#ffffff"))
+    )
+    return fig
+
+
+STATS_METRICS = {
+    "Total Passes": ("total_p90", "#00d2ff", ".1f", ""),
+    "Advanced Passes": ("adv_p90", "#22d3ee", ".2f", ""),
+    "Progressive Passes": ("prog_p90", "#10b981", ".2f", ""),
+    "Final Third Passes": ("f3_p90", "#8b5cf6", ".2f", ""),
+    "Pass Impact Value": ("xt_p90", "#f59e0b", ".3f", ""),
+    "% Positive Impact": ("pos_pct", "#f43f5e", ".1f", "%"),
+    "Defensive Duels": ("duels_p90", "#f97316", ".1f", ""),
+    "Interceptions": ("interceptions_p90", "#8b5cf6", ".1f", ""),
+    "Touches": ("touches_p90", "#38bdf8", ".1f", ""),
+    "Offensive Duels": ("off_duels_p90", "#34d399", ".1f", ""),
+    "Shots": ("shots_p90", "#fbbf24", ".2f", ""),
+}
+
+
+def draw_metric_chart(df_scores, metric_label="Total Passes", avg_mode="Average"):
+    col, color, value_fmt, suffix = STATS_METRICS.get(metric_label, ("total_p90", "#00d2ff", ".1f", ""))
+    fig = go.Figure()
+    x_labels = [f"Match {i+1}" for i in range(len(df_scores))]
+    y = df_scores[col]
+    rgb = tuple(int(color.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
+    fig.add_trace(go.Scatter(
+        x=x_labels, y=y,
+        customdata=df_scores["match"],
+        mode='lines+markers',
+        line=dict(color=color, width=3, shape='spline'),
+        marker=dict(size=8, color=color),
+        fill='tozeroy', fillcolor=f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.05)',
+        name=metric_label,
+        hovertemplate="%{customdata}<br>" + metric_label + ": %{y:" + value_fmt + "}" + suffix
+    ))
+    _avg_reference_traces(fig, x_labels, y, avg_mode, value_fmt)
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a1a2e", plot_bgcolor="#1a1a2e",
+        height=320, margin=dict(l=20, r=20, t=40, b=20),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+        xaxis=dict(showgrid=False, zeroline=False),
+        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title=dict(text=metric_label, font=dict(size=14, color="#a0a0b5"))
+    )
+    return fig
+
+ELEGANT_CHART_ACCENTS = ["#3b82f6", "#10b981", "#a78bfa", "#f59e0b", "#38bdf8", "#f97316", "#ec4899", "#14b8a6", "#eab308"]
+ELEGANT_BOX_BORDER = "#3a3a50"
+
+def _evo_split(df, n):
+    """Split a match-ordered dataframe into first-N and last-N periods."""
+    total = len(df)
+    if total == 0:
+        return df, df, 0
+    n = max(1, min(int(n), total // 2 if total >= 2 else 1))
+    if total < 2 * n:
+        n = max(1, total // 2)
+    return df.head(n), df.tail(n), n
+
+
+def _elegant_comparison_bar(title, val_first, val_last, suffix="", category="passes", n_first=10, n_last=10):
+    """Elegant bar with uniform dark-gray card border and compact bars."""
+    improved = val_last >= val_first
+    pct_color = "#34d399" if improved else "#f87171"
+    base = max(abs(val_first), 1e-9)
+    delta_pct = (val_last - val_first) / base * 100.0
+    badge = f"▲ +{delta_pct:.0f}%" if improved else f"▼ {delta_pct:.0f}%"
+    y_top = max(val_first, val_last) * 1.35 if max(val_first, val_last) > 0 else 1.0
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[f"First {n_first}", f"Last {n_last}"],
+        y=[val_first, val_last],
+        marker=dict(
+            color=["rgba(148,163,184,0.42)", "rgba(148,163,184,0.62)"],
+            line=dict(color=[ELEGANT_BOX_BORDER, ELEGANT_BOX_BORDER], width=[1.2, 1.2]),
+        ),
+        text=[f"{val_first:.2f}{suffix}", f"{val_last:.2f}{suffix}"],
+        textposition="outside",
+        textfont=dict(size=12, color="#ffffff"),
+        width=[0.24, 0.24],
+        hovertemplate="%{x}<br>" + title + ": %{y:.2f}" + suffix + "<extra></extra>",
+        cliponaxis=False,
+    ))
+    fig.add_annotation(
+        x=0.5, xref="paper", y=1.02, yref="paper", yanchor="bottom",
+        text=f"<span style='color:{pct_color};font-weight:700'>{badge}</span>",
+        showarrow=False, font=dict(size=12), align="center",
+    )
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#1a1a2e",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=270,
+        margin=dict(l=14, r=14, t=58, b=28),
+        yaxis=dict(range=[0, y_top], showgrid=True, gridcolor="rgba(255,255,255,0.04)",
+                   gridwidth=1, zeroline=False, showticklabels=False, visible=False),
+        xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=11, color="#c7cdda")),
+        title=dict(text=title, x=0.5, xanchor="center", font=dict(size=14, color="#eef1f7")),
+        showlegend=False,
+        bargap=0.06,
+        shapes=[
+            dict(type="rect", xref="paper", yref="paper", x0=0, y0=0, x1=1, y1=1,
+                 line=dict(color=ELEGANT_BOX_BORDER, width=1.5), fillcolor="rgba(26,26,46,0.45)"),
+            dict(type="line", xref="paper", yref="paper", x0=0.04, y0=0.14, x1=0.96, y1=0.14,
+                 line=dict(color="rgba(255,255,255,0.08)", width=1)),
+        ],
+    )
+    return fig
+
+
+def draw_comparison_bar(title, val_first, val_last, suffix="", elegant=None, category="passes",
+                        n_first=10, n_last=10):
+    if elegant is None:
+        elegant = ELEGANT_CHARTS
+    if elegant:
+        return _elegant_comparison_bar(title, val_first, val_last, suffix, category, n_first, n_last)
+    color_first = "#34d399" if val_first >= val_last else "#f87171"
+    color_last = "#34d399" if val_last >= val_first else "#f87171"
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[f"First {n_first} Matches", f"Last {n_last} Matches"],
+        y=[val_first, val_last],
+        marker=dict(
+            color=["#444466", "#444466"],
+            line=dict(color=[color_first, color_last], width=[2.0, 2.0]),
+        ),
+        text=[f"{val_first:.2f}{suffix}", f"{val_last:.2f}{suffix}"],
+        textposition='auto',
+        width=[0.38, 0.38],
+        hovertemplate="%{x}<br>" + title + ": %{y:.2f}" + suffix + "<extra></extra>",
+    ))
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a1a2e", plot_bgcolor="#1a1a2e",
+        height=250, margin=dict(l=20, r=20, t=40, b=20),
+        yaxis=dict(range=[0, max(val_first, val_last) * 1.2],
+                   showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+        xaxis=dict(showgrid=False, zeroline=False),
+        title=dict(text=title, font=dict(size=14, color="#a0a0b5")),
+        showlegend=False, bargap=0.18,
+    )
+    return fig
+
+# SIDEBAR
 st.sidebar.markdown("""
-<h2 style="color:#ffffff;font-weight:700;margin-bottom:4px">Pass Stats Dashboard</h2>
-<p style="color:#aaaaaa;font-size:13px;margin-top:0">2026 Season • Hudson Cicala</p>
+<div style="text-align:center;padding:8px 0 4px 0">
+    <div style="font-size:20px;font-weight:300;letter-spacing:2px;color:#a0a0b5;text-transform:uppercase">Pass Stats</div>
+    <div style="font-size:13px;font-weight:600;color:#ffffff;margin-top:-2px">Dashboard</div>
+</div>
+<div style="border-bottom:1px solid #2a2a3e;margin:6px 0 12px 0"></div>
+<div style="font-size:11px;font-weight:500;letter-spacing:1px;color:#6b6b80;text-transform:uppercase;margin:0 10px 6px 10px">2026 Season</div>
+<div style="font-size:16px;font-weight:600;color:#e0e0f0;margin:0 10px 12px 10px">Generic Player</div>
 """, unsafe_allow_html=True)
 
-img_path = "Captura de tela 2026-06-02 154425.png"
+img_path = "player_photo.png"
 if os.path.exists(img_path):
     st.sidebar.image(img_path, use_container_width=True)
 
 st.sidebar.markdown("""
-<p style="color:#666666;font-size:11px;margin-top:8px">Data collected from match footage</p>
+<div style="border-bottom:1px solid #2a2a3e;margin:16px 0 8px 0"></div>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("#### Stats Card Style")
-CARD_STYLE = st.sidebar.radio(
-    "Choose visual layout",
-    options=list(TARGET_CARD_STYLES.keys()),
-    index=0,
-    help="Compare 6 designs showing Hudson's value vs target for each metric.",
-)
-CARD_LAYOUT = st.sidebar.radio(
-    "Card separation",
-    options=["Combined", "Separated"],
-    index=0,
-    help="Separated shows data in one card and target comparison in a second card below.",
-)
-_layout_mode = "separated" if CARD_LAYOUT == "Separated" else "combined"
-
-st.sidebar.markdown("#### Card Color")
-CARD_TONE_SCHEME = st.sidebar.radio(
-    "Accent palette",
-    options=["Blue", "Gray"],
-    index=0,
-    help="Blue uses the default accent tones; Gray uses neutral gray card borders.",
-)
-ACTIVE_CARD_TONES = GRAY_TONES if CARD_TONE_SCHEME == "Gray" else PASS_TONES
-
-st.sidebar.markdown("#### Target Benchmark")
-TARGET_BENCHMARK = st.sidebar.radio(
-    "Comparison pool",
-    options=["MLS", "TOP 5 - UE"],
-    index=0,
-    help=(
-        "Targets for passes and defensive duels are the position-filtered averages "
-        f"from the selected database ({', '.join(BENCHMARK_POSITIONS)}; "
-        f"≥{int(BENCHMARK_MINUTES_RATIO * 100)}% of max minutes)."
-    ),
-)
-_bench_meta = load_benchmark_targets(TARGET_BENCHMARK)
-if _bench_meta is None:
-    st.sidebar.warning(f"Benchmark file not found for {TARGET_BENCHMARK}. Using fallback targets.")
-else:
-    st.sidebar.caption(
-        f"{TARGET_BENCHMARK}: {_bench_meta['sample_size']} players · "
-        f"≥{_bench_meta['minutes_threshold']:.0f} min"
-    )
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("#### Export Report")
-if not PDF_AVAILABLE:
-    st.sidebar.warning("Install reportlab to enable PDF export: `pip install reportlab`")
-else:
-    if st.sidebar.button("Generate PDF Report", type="primary", use_container_width=True):
-        with st.spinner("Building season report..."):
-            try:
-                pdf_bytes = generate_season_pdf(
-                    card_tones=ACTIVE_CARD_TONES,
-                    benchmark_source=TARGET_BENCHMARK,
-                )
-                st.session_state["pdf_report"] = pdf_bytes
-                st.sidebar.success("Report ready!")
-            except Exception as exc:
-                st.sidebar.error(f"PDF error: {exc}")
-    if "pdf_report" in st.session_state:
-        st.sidebar.download_button(
-            label="Download PDF",
-            data=st.session_state["pdf_report"],
-            file_name="Hudson_Cicala_Season_Report.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-        st.sidebar.caption("All Matches • Passes & Defensive Actions")
+MODERN_CARDS = st.sidebar.toggle("Caixinhas modernas", value=False, key="modern_cards")
 
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
-def_all_stats = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
+offensive_all_stats = [
+    compute_offensive_stats(touches_dfs_by_match[m], offensive_duels_dfs_by_match[m], shots_dfs_by_match[m], m)
+    for m in touches_dfs_by_match
+]
+OFF_DICTS = (touches_dfs_by_match, offensive_duels_dfs_by_match, shots_dfs_by_match)
 
-_pass_base = {}
-if num_matches > 0:
-    for k in all_match_stats[0].keys():
-        if isinstance(all_match_stats[0][k], (int, float)):
-            _pass_base[k] = sum(s[k] for s in all_match_stats) / num_matches
+# TABS & LAYOUT
+tab_graf, tab_dash, tab_evo = st.tabs(["Charts & Analysis", "Detailed Dashboard", "Development"])
 
-_def_base = {}
-if len(def_all_stats) > 0:
-    for k in def_all_stats[0].keys():
-        if isinstance(def_all_stats[0][k], (int, float)):
-            _def_base[k] = sum(s[k] for s in def_all_stats) / len(def_all_stats)
+with tab_graf:
+    st.markdown("### Overall Performance Summary")
+    if num_matches > 0:
+        total_passes_all = sum(s['total_passes'] for s in all_match_stats)
+        total_succ_all = sum(s['successful_passes'] for s in all_match_stats)
+        total_prog_all = sum(s['progressive_successful'] for s in all_match_stats)
+        total_f3_all = sum(s['to_final_third_success'] for s in all_match_stats)
+        total_pos_all = sum(s['pos_count'] for s in all_match_stats)
+        total_xt_all = sum(s['sum_dxt'] for s in all_match_stats)
+        avg_acc = sum(s['accuracy_pct'] for s in all_match_stats) / num_matches
+        avg_prog_p90 = sum(s['prog_p90'] for s in all_match_stats) / num_matches
+        avg_f3_p90 = sum(s['f3_p90'] for s in all_match_stats) / num_matches
+        avg_pos_pct = sum(s['pos_pct'] for s in all_match_stats) / num_matches
+        avg_xt_p90 = sum(s['xt_p90'] for s in all_match_stats) / num_matches
+        avg_total_p90 = sum(s['total_p90'] for s in all_match_stats) / num_matches
+        total_adv_made_all = sum(s['adv_made'] for s in all_match_stats)
+        total_adv_att_all = sum(s['adv_att'] for s in all_match_stats)
+        avg_adv_p90 = sum(s['adv_p90'] for s in all_match_stats) / num_matches
+        avg_adv_acc = sum(s['adv_acc_pct'] for s in all_match_stats) / num_matches
 
-METRIC_TARGETS = build_metric_targets(_pass_base, _def_base, TARGET_BENCHMARK)
-T = METRIC_TARGETS
+        st.markdown("### Passes")
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            section_card("📋 Overview", PASS_TONES[0], [
+                ("Passes p90", f"{avg_total_p90:.1f}", f"Total: {total_passes_all}"),
+                ("Successful %", f"{avg_acc:.1f}%", f"Total: {total_succ_all}"),
+            ])
+        with col_s2:
+            section_card("📊 Advanced", PASS_TONES[1], [
+                ("Advanced Passes p90", f"{avg_adv_p90:.1f}", f"Total: {total_adv_made_all}",
+                 "Sum of progressive and final-third passes"),
+                ("Advanced Acc %", f"{avg_adv_acc:.1f}%", f"({total_adv_made_all}/{total_adv_att_all})",
+                 "Completion rate of progressive + final-third passes"),
+            ])
+        with col_s3:
+            section_card("⚡ Impact", PASS_TONES[2], [
+                ("% Positive Impact", f"{avg_pos_pct:.1f}%", f"Total: {total_pos_all}",
+                 "Passes that generated a positive impact based on where they ended on the field"),
+                ("Pass Impact Value", f"{avg_xt_p90:.3f}", f"Total: {total_xt_all:.3f}",
+                 "Calculation used to evaluate the offensive value added by a pass."),
+            ])
 
-with st.sidebar.expander("Season targets (reference)"):
-    _tgt_rows = []
-    _db_keys = {
-        "total_p90", "accuracy_pct", "advanced_passes_p90", "advanced_accuracy_pct",
-        "total_actions_p90", "duels_p90", "duels_won_pct",
-    }
-    for _k, _v in T.items():
-        _base = _pass_base.get(_k, _def_base.get(_k, 0))
-        _src = TARGET_BENCHMARK if _k in _db_keys and _bench_meta else "Generated"
-        _tgt_rows.append({"Metric": _k, "Hudson Per Game": round(_base, 2), "Target": _v, "Source": _src})
-    st.dataframe(pd.DataFrame(_tgt_rows), hide_index=True, use_container_width=True)
+        st.markdown("", unsafe_allow_html=True)
 
-# ── LAYOUT ─────────────────────────────────────────────────────
-tab_dash, = st.tabs(["Detailed Dashboard"])
+        defensive_num_matches = len(defensive_dfs_by_match)
+        defensive_all_stats = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
+        if defensive_num_matches > 0:
+            total_def_actions_all = sum(s['total_actions'] for s in defensive_all_stats)
+            total_def_att_all = sum(s['actions_attacking'] for s in defensive_all_stats)
+            total_duels_all = sum(s['total_duels'] for s in defensive_all_stats)
+            total_duels_won_all = sum(s['duels_won'] for s in defensive_all_stats)
+            total_funnel_all = sum(s['funnel_actions'] for s in defensive_all_stats)
+            total_funnel_success_all = sum(s['funnel_successful'] for s in defensive_all_stats)
+            avg_def_actions_p90 = sum(s['total_actions_p90'] for s in defensive_all_stats) / defensive_num_matches
+            avg_def_att_p90 = sum(s['actions_attacking_p90'] for s in defensive_all_stats) / defensive_num_matches
+            avg_duels_p90 = sum(s['duels_p90'] for s in defensive_all_stats) / defensive_num_matches
+            avg_duels_won_pct = sum(s['duels_won_pct'] for s in defensive_all_stats) / defensive_num_matches
+            avg_funnel_p90 = sum(s['funnel_actions_p90'] for s in defensive_all_stats) / defensive_num_matches
+            avg_funnel_success_pct = sum(s['funnel_success_pct'] for s in defensive_all_stats) / defensive_num_matches
+
+            st.markdown("### Defensive Actions")
+            col_d1, col_d2, col_d3 = st.columns(3)
+            with col_d1:
+                section_card("🛡️ General", DEF_TONES[0], [
+                    ("Defensive Actions p90", f"{avg_def_actions_p90:.1f}", f"Total: {total_def_actions_all}"),
+                    ("Actions in Opp. Field p90", f"{avg_def_att_p90:.1f}", f"Total: {total_def_att_all}"),
+                ])
+            with col_d2:
+                section_card("⚔️ Duels", DEF_TONES[1], [
+                    ("Defensive Duels p90", f"{avg_duels_p90:.1f}", f"Total: {total_duels_all}"),
+                    ("% Duels Won", f"{avg_duels_won_pct:.1f}%", f"({total_duels_won_all}/{total_duels_all})"),
+                ])
+            with col_d3:
+                section_card("🛡️ Funnel Protection Actions", DEF_TONES[2], [
+                    ("Funnel Protection Actions p90", f"{avg_funnel_p90:.1f}", f"Total: {total_funnel_all}"),
+                    ("% FPA Successful", f"{avg_funnel_success_pct:.1f}%", f"({total_funnel_success_all}/{total_funnel_all})"),
+                ])
+
+        offensive_num_matches = len(touches_dfs_by_match)
+        if offensive_num_matches > 0:
+            total_touches_all = sum(s['touches'] for s in offensive_all_stats)
+            total_f3_touches_all = sum(s['f3_touches'] for s in offensive_all_stats)
+            total_off_duels_all = sum(s['off_duels'] for s in offensive_all_stats)
+            total_off_duels_won_all = sum(s['off_duels_won'] for s in offensive_all_stats)
+            total_shots_all = sum(s['shots'] for s in offensive_all_stats)
+            total_goals_all = sum(s['goals'] for s in offensive_all_stats)
+            total_on_target_all = sum(s['shots_on_target'] for s in offensive_all_stats)
+            avg_touches_p90 = sum(s['touches_p90'] for s in offensive_all_stats) / offensive_num_matches
+            avg_f3_touches_p90 = sum(s['f3_touches_p90'] for s in offensive_all_stats) / offensive_num_matches
+            avg_off_duels_p90 = sum(s['off_duels_p90'] for s in offensive_all_stats) / offensive_num_matches
+            avg_off_duels_won_pct = sum(s['off_duels_won_pct'] for s in offensive_all_stats) / offensive_num_matches
+            avg_shots_p90 = sum(s['shots_p90'] for s in offensive_all_stats) / offensive_num_matches
+
+            st.markdown("### Offensive Actions")
+            col_o1, col_o2, col_o3 = st.columns(3)
+            with col_o1:
+                section_card("📋 Overview", OFF_TONES[0], [
+                    ("Touches p90", f"{avg_touches_p90:.1f}", f"Total: {total_touches_all}"),
+                    ("Final Third Touches p90", f"{avg_f3_touches_p90:.1f}", f"Total: {total_f3_touches_all}"),
+                ])
+            with col_o2:
+                section_card("⚔️ Offensive Duels", OFF_TONES[1], [
+                    ("Offensive Duels p90", f"{avg_off_duels_p90:.1f}", f"Total: {total_off_duels_all}"),
+                    ("% Duels Won", f"{avg_off_duels_won_pct:.1f}%", f"({total_off_duels_won_all}/{total_off_duels_all})"),
+                ])
+            with col_o3:
+                section_card("🥅 Shots", OFF_TONES[2], [
+                    ("Shots p90", f"{avg_shots_p90:.2f}", f"Total: {total_shots_all}"),
+                    ("Goals", f"{total_goals_all}", f"On Target: {total_on_target_all}"),
+                ])
+
+        st.markdown(f'<div style="text-align:center;font-size:12px;color:#666666;margin-top:12px">{num_matches} matches collected</div>', unsafe_allow_html=True)
+        st.markdown("", unsafe_allow_html=True)
+
+        df_scores = compute_match_scores(dfs_by_match, defensive_dfs_by_match, OFF_DICTS)
+        if not df_scores.empty:
+            st.markdown("### Grade per Match")
+            gcol1, gcol2 = st.columns(2)
+            with gcol1:
+                grade_choice = st.radio(
+                    "Grade", list(GRADE_OPTIONS.keys()),
+                    index=0, horizontal=True, key="grade_choice"
+                )
+            with gcol2:
+                grade_avg_mode = st.radio(
+                    "Reference Line", ["Average", "Moving Average"],
+                    index=0, horizontal=True, key="grade_avg_mode"
+                )
+            fig_scores = draw_grade_chart(df_scores, grade_choice, grade_avg_mode)
+            st.plotly_chart(fig_scores, use_container_width=True)
+
+            with st.expander("How is the Grade calculated?"):
+                st.markdown("""
+**Combined Grade** = average (equal weights) of **Pass Grade**, **Defensive Grade** and **Offensive Grade**.
+
+**Pass Grade**
+- **Pass Impact:** Measures actual danger created by passes.
+- **Progressive Passes:** Line-breaking ability.
+- **Final Third Passes:** Attacking presence in dangerous zones.
+- **% Positive Pass Impact:** Efficiency of threat generation.
+- **Total Passes:** Overall involvement.
+- **Negative Pass Impact:** Penalty for passes that lose threat.
+
+**Defensive Grade**
+- **Duels Won %:** Rewards efficiency in defensive duels.
+- **Funnel Defensive Actions:** Rewards actions in the defensive funnel zone.
+- **Interception xT:** Rewards interceptions in high-threat zones.
+- **Duels Won Count:** Rewards volume of duels won.
+- **Interceptions Count:** Rewards volume of interceptions.
+
+**Offensive Grade**
+- **Touches:** Overall offensive involvement.
+- **Final Third Touches:** Presence in dangerous areas.
+- **Offensive Duels Won %:** Efficiency in 1v1 attacking duels.
+- **Shots:** Shot volume / threat generated.
+- **Finishing (Shots on Target %):** Shooting accuracy.
+""")
+
+            st.markdown("", unsafe_allow_html=True)
+            st.markdown("### Stats")
+            scol1, scol2 = st.columns(2)
+            with scol1:
+                metric_choice = st.selectbox(
+                    "Metric", list(STATS_METRICS.keys()), index=0, key="stats_metric"
+                )
+            with scol2:
+                stats_avg_mode = st.radio(
+                    "Reference Line", ["Average", "Moving Average"],
+                    index=0, horizontal=True, key="stats_avg_mode"
+                )
+            fig_metric = draw_metric_chart(df_scores, metric_choice, stats_avg_mode)
+            st.plotly_chart(fig_metric, use_container_width=True)
 
 with tab_dash:
-    sub_tab_passes, sub_tab_def = st.tabs(["Passes", "Defensive Actions"])
+    sub_tab_passes, sub_tab_def, sub_tab_off = st.tabs(["Passes", "Defensive Actions", "Offensive Actions"])
 
-    # ═══════════════════════════════════════════════════════════
-    # PASSES TAB
-    # ═══════════════════════════════════════════════════════════
     with sub_tab_passes:
         st.markdown("### Match Filters")
         col_f1, col_f2 = st.columns(2)
@@ -2099,8 +1856,11 @@ with tab_dash:
             pass_match_options = ["All Matches"] + list(dfs_by_match.keys())
             selected_match = st.selectbox("Select Match", options=pass_match_options, index=0, key="pass_match")
         with col_f2:
-            pass_filter = st.radio("Pass Type", ["All", "Successful", "Unsuccessful", "Progressive", "Final Third"],
-                                   index=0, horizontal=True, key="pass_filter")
+            pass_filter = st.radio(
+                "Pass Type",
+                ["All", "Successful", "Unsuccessful", "Progressive", "Final Third"],
+                index=0, horizontal=True, key="pass_filter"
+            )
 
         if selected_match == "All Matches":
             df_game_filtered = pd.concat(dfs_by_match.values(), ignore_index=True)
@@ -2122,6 +1882,7 @@ with tab_dash:
 
         df_game = apply_filter(df_game_filtered)
         s_game = compute_stats(df_game, match_name_for_stats)
+        s_real = s_game.copy()
         s_avg = {}
         if num_matches > 0:
             for k in all_match_stats[0].keys():
@@ -2137,132 +1898,365 @@ with tab_dash:
             s_game = s_avg.copy()
 
         st.markdown("---")
-
         img_pm_game, fig_pm_game = draw_pass_map(df_game); plt.close(fig_pm_game)
         img_ht_game, fig_ht_game = draw_corridor_heatmap(df_game); plt.close(fig_ht_game)
-
         top_n_xt = 10 if force_avg else 5
-        img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt)
+        img_xt_game, fig_xt_game = draw_top_xt_map(df_game, top_n=top_n_xt); plt.close(fig_xt_game)
 
         col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
-            st.markdown('<p style="font-size:13px;font-weight:600;color:#cccccc">Pass Map</p>', unsafe_allow_html=True)
-            st.image(img_pm_game,use_container_width=True)
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Pass Map</div>', unsafe_allow_html=True)
+            st.image(img_pm_game, use_container_width=True)
         with col_m2:
-            st.markdown('<p style="font-size:13px;font-weight:600;color:#cccccc">Zone Heatmap (Destination)</p>', unsafe_allow_html=True)
-            st.image(img_ht_game,use_container_width=True)
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Zone Heatmap</div>', unsafe_allow_html=True)
+            st.image(img_ht_game, use_container_width=True)
         with col_m3:
-            label="Top 10" if force_avg else "Top 5"
-            st.markdown(f'<p style="font-size:13px;font-weight:600;color:#cccccc">{label} Pass Impact</p>', unsafe_allow_html=True)
-            st.pyplot(fig_xt_game, use_container_width=True)
-            plt.close(fig_xt_game)
+            label = "Top 10" if force_avg else "Top 5"
+            st.markdown(f'<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">{label} Pass Impact</div>', unsafe_allow_html=True)
+            st.image(img_xt_game, use_container_width=True)
 
-        st.markdown("<hr style='margin:8px 0;opacity:0.2'>", unsafe_allow_html=True)
-
-        # ── STATS CARDS ───────────────────────────────────────
+        st.markdown("", unsafe_allow_html=True)
         col_s1, col_s2, col_s3 = st.columns(3)
+        if force_avg:
+            with col_s1:
+                section_card("📋 Pass Overview", PASS_TONES[0], [
+                    ("Total Passes", f"{s_game['total_p90']:.2f}"),
+                    ("Successful %", f"{s_game['accuracy_pct']:.2f}%"),
+                ])
+            with col_s2:
+                section_card("📊 Advanced", PASS_TONES[1], [
+                    ("Advanced Passes", f"{s_game['adv_p90']:.2f}"),
+                    ("Advanced Acc %", f"{s_game['adv_acc_pct']:.2f}%", f"({s_real['adv_made']}/{s_real['adv_att']})"),
+                ])
+            with col_s3:
+                section_card("⚡ Impact", PASS_TONES[2], [
+                    ("% Positive Impact", f"{s_game['pos_pct']:.2f}%"),
+                    ("Pass Impact Value", f"{s_game['xt_p90']:.3f}"),
+                ])
+        else:
+            with col_s1:
+                cmp_section_card("📋 Pass Overview", PASS_TONES[0], [
+                    ("Total Passes", s_game["total_p90"], f"{s_avg['total_p90']:.1f}",
+                     f"{s_game['total_p90']:.1f}", f"{s_avg['total_p90']:.1f}", ""),
+                    ("Successful %", s_game["accuracy_pct"], s_avg["accuracy_pct"],
+                     f"{s_game['accuracy_pct']:.1f}%", f"{s_avg['accuracy_pct']:.1f}%", ""),
+                ])
+            with col_s2:
+                cmp_section_card("📊 Advanced", PASS_TONES[1], [
+                    ("Advanced Passes", s_game["adv_p90"], f"{s_avg['adv_p90']:.1f}",
+                     f"{s_game['adv_p90']:.1f}", f"{s_avg['adv_p90']:.1f}", ""),
+                    ("Advanced Acc %", s_game["adv_acc_pct"], s_avg["adv_acc_pct"],
+                     f"{s_game['adv_acc_pct']:.1f}%", f"{s_avg['adv_acc_pct']:.1f}%", "",
+                     f"({s_real['adv_made']}/{s_real['adv_att']})"),
+                ])
+            with col_s3:
+                cmp_section_card("⚡ Impact", PASS_TONES[2], [
+                    ("% Positive Impact", s_game["pos_pct"], s_avg["pos_pct"],
+                     f"{s_game['pos_pct']:.1f}%", f"{s_avg['pos_pct']:.1f}%",
+                     "Passes that generated a positive impact based on where they ended on the field"),
+                    ("Pass Impact Value", s_game["xt_p90"], s_avg["xt_p90"],
+                     f"{s_game['xt_p90']:.3f}", f"{s_avg['xt_p90']:.3f}",
+                     "Calculation used to define the value of pass impact based on expected threat (xT) progression"),
+                ])
 
-        with col_s1:
-            target_section_card("Overview", ACTIVE_CARD_TONES[0], [
-                ("Total Passes Per Game", s_game["total_p90"], T["total_p90"],
-                 f"{s_game['total_p90']:.1f}", f"{T['total_p90']:.1f}"),
-                ("% Accuracy", s_game["accuracy_pct"], T["accuracy_pct"],
-                 f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode, export_key="pass_overview_png")
-        with col_s2:
-            target_section_card("Progressive", ACTIVE_CARD_TONES[1], [
-                ("Progressive Passes Per Game", s_game["prog_p90"], T["advanced_passes_p90"],
-                 f"{s_game['prog_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
-                ("% Progressive Accuracy", s_game["progressive_accuracy_pct"], T["advanced_accuracy_pct"],
-                 f"{s_game['progressive_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode, export_key="pass_progressive_png")
-        with col_s3:
-            target_section_card("Impact", ACTIVE_CARD_TONES[2], [
-                ("Pass Impact Value Per Game", s_game["xt_p90"], T["xt_p90"],
-                 f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}"),
-                ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
-                 f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode, export_key="pass_impact_png")
-    # ═══════════════════════════════════════════════════════════
     with sub_tab_def:
         st.markdown("### Match Filter")
         col_df1, col_df2 = st.columns(2)
         with col_df1:
-            def_match_options=["All Matches"]+list(defensive_dfs_by_match.keys())
-            selected_def_match=st.selectbox("Select Match",options=def_match_options,index=0,key="def_match")
+            def_match_options = ["All Matches"] + list(defensive_dfs_by_match.keys())
+            selected_def_match = st.selectbox("Select Match", options=def_match_options, index=0, key="def_match")
         with col_df2:
-            def_type_filter=st.radio("Filter Type",["All","Duels Only","Interceptions Only"],horizontal=True,key="def_type_filter")
+            def_type_filter = st.radio("Filter Type", ["All", "Duels Only", "Interceptions Only"],
+                                       horizontal=True, key="def_type_filter")
 
-        if selected_def_match=="All Matches":
-            df_def_game_raw=pd.concat(defensive_dfs_by_match.values(),ignore_index=True)
-            def_match_name_for_stats="All Matches"
+        if selected_def_match == "All Matches":
+            df_def_game_raw = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
+            def_match_name_for_stats = "All Matches"
         else:
-            df_def_game_raw=defensive_dfs_by_match[selected_def_match].copy()
-            def_match_name_for_stats=selected_def_match
+            df_def_game_raw = defensive_dfs_by_match[selected_def_match].copy()
+            def_match_name_for_stats = selected_def_match
 
-        if def_type_filter=="Duels Only":
-            df_def_game=df_def_game_raw[df_def_game_raw["is_duel"]].copy()
-        elif def_type_filter=="Interceptions Only":
-            df_def_game=df_def_game_raw[df_def_game_raw["is_interception"]].copy()
+        if def_type_filter == "Duels Only":
+            df_def_game = df_def_game_raw[df_def_game_raw["is_duel"]].copy()
+        elif def_type_filter == "Interceptions Only":
+            df_def_game = df_def_game_raw[df_def_game_raw["is_interception"]].copy()
         else:
-            df_def_game=df_def_game_raw.copy()
+            df_def_game = df_def_game_raw.copy()
 
-        d_game=compute_defensive_stats(df_def_game,def_match_name_for_stats)
-        def_all=[compute_defensive_stats(defensive_dfs_by_match[m],m) for m in defensive_dfs_by_match]
-        d_avg={}
-        if len(def_all)>0:
+        d_game = compute_defensive_stats(df_def_game, def_match_name_for_stats)
+        d_real = compute_defensive_stats(df_def_game_raw, def_match_name_for_stats)
+        def_all = [compute_defensive_stats(defensive_dfs_by_match[m], m) for m in defensive_dfs_by_match]
+        d_avg = {}
+        if len(def_all) > 0:
             for k in def_all[0].keys():
-                if isinstance(def_all[0][k],(int,float)):
-                    d_avg[k]=sum(s[k] for s in def_all)/len(def_all)
+                if isinstance(def_all[0][k], (int, float)):
+                    d_avg[k] = sum(s[k] for s in def_all) / len(def_all)
                 else:
-                    d_avg[k]=0
+                    d_avg[k] = 0
         else:
-            d_avg=d_game.copy()
+            d_avg = d_game.copy()
 
-        force_avg_def=selected_def_match=="All Matches"
+        force_avg_def = selected_def_match == "All Matches"
         if force_avg_def:
-            d_game=d_avg.copy()
+            d_game = d_avg.copy()
 
         st.markdown("---")
+        img_def_map, fig_def_map = draw_defensive_map(df_def_game); plt.close(fig_def_map)
+        img_def_hm, fig_def_hm = draw_defensive_heatmap(df_def_game); plt.close(fig_def_hm)
+        img_funnel, fig_funnel = draw_funnel_protection_map(df_def_game); plt.close(fig_funnel)
 
-        img_def_map,fig_def_map=draw_defensive_map(df_def_game); plt.close(fig_def_map)
-        img_def_hm,fig_def_hm=draw_defensive_heatmap(df_def_game); plt.close(fig_def_hm)
-        img_funnel,fig_funnel=draw_funnel_protection_map(df_def_game)
-
-        col_dm1,col_dm2,col_dm3=st.columns(3)
+        col_dm1, col_dm2, col_dm3 = st.columns(3)
         with col_dm1:
-            st.markdown('<p style="font-size:13px;font-weight:600;color:#cccccc">Defensive Actions Map</p>', unsafe_allow_html=True)
-            st.image(img_def_map,use_container_width=True)
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Defensive Actions Map</div>', unsafe_allow_html=True)
+            st.image(img_def_map, use_container_width=True)
         with col_dm2:
-            st.markdown('<p style="font-size:13px;font-weight:600;color:#cccccc">Defensive Heatmap</p>', unsafe_allow_html=True)
-            st.image(img_def_hm,use_container_width=True)
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Defensive Heatmap</div>', unsafe_allow_html=True)
+            st.image(img_def_hm, use_container_width=True)
         with col_dm3:
-            st.markdown('<p style="font-size:13px;font-weight:600;color:#cccccc">Funnel Protection Actions</p>', unsafe_allow_html=True)
-            st.pyplot(fig_funnel, use_container_width=True)
-            plt.close(fig_funnel)
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Funnel Protection Actions</div>', unsafe_allow_html=True)
+            st.image(img_funnel, use_container_width=True)
 
-        st.markdown("<hr style='margin:8px 0;opacity:0.2'>", unsafe_allow_html=True)
-
-        # ── DEFENSIVE STATS CARDS ─────────────────────────────
+        st.markdown("", unsafe_allow_html=True)
         col_ds1, col_ds2, col_ds3 = st.columns(3)
-        with col_ds1:
-            target_section_card("Overview", ACTIVE_CARD_TONES[0], [
-                ("Defensive Actions Per Game", d_game["total_actions_p90"], T["total_actions_p90"],
-                 f"{d_game['total_actions_p90']:.1f}", f"{T['total_actions_p90']:.1f}"),
-                ("Actions in Own Half Per Game", d_game["actions_own_p90"], T["actions_own_p90"],
-                 f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
-            ], CARD_STYLE, _layout_mode, export_key="def_overview_png")
-        with col_ds2:
-            target_section_card("Duels", ACTIVE_CARD_TONES[1], [
-                ("Defensive Duels Per Game", d_game["duels_p90"], T["duels_p90"],
-                 f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
-                ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
-                 f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode, export_key="def_duels_png")
-        with col_ds3:
-            target_section_card("Funnel Protection", ACTIVE_CARD_TONES[2], [
-                ("Funnel Protection Actions Per Game", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
-                 f"{d_game['funnel_actions_p90']:.1f}", f"{T['funnel_actions_p90']:.1f}"),
-                ("% FPA Successful", d_game["funnel_success_pct"], T["funnel_success_pct"],
-                 f"{d_game['funnel_success_pct']:.1f}%", f"{T['funnel_success_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode, export_key="def_funnel_png")
+        if force_avg_def:
+            with col_ds1:
+                section_card("🛡️ General", DEF_TONES[0], [
+                    ("Defensive Actions", f"{d_game['total_actions_p90']:.2f}"),
+                    ("Actions in Opp. Field", f"{d_game['actions_attacking_p90']:.2f}"),
+                ])
+            with col_ds2:
+                section_card("⚔️ Duels", DEF_TONES[1], [
+                    ("Defensive Duels", f"{d_game['duels_p90']:.2f}"),
+                    ("% Duels Won", f"{d_game['duels_won_pct']:.2f}%", f"({d_real['duels_won']}/{d_real['total_duels']})"),
+                ])
+            with col_ds3:
+                section_card("🛡️ Funnel Protection Actions", DEF_TONES[2], [
+                    ("Funnel Protection Actions", f"{d_game['funnel_actions_p90']:.2f}"),
+                    ("% FPA Successful", f"{d_game['funnel_success_pct']:.2f}%", f"({d_real['funnel_successful']}/{d_real['funnel_actions']})"),
+                ])
+        else:
+            with col_ds1:
+                cmp_section_card("🛡️ General", DEF_TONES[0], [
+                    ("Defensive Actions", d_game["total_actions_p90"], f"{d_avg['total_actions_p90']:.1f}",
+                     f"{d_game['total_actions_p90']:.1f}", f"{d_avg['total_actions_p90']:.1f}", ""),
+                    ("Actions in Opp. Field", d_game["actions_attacking_p90"], f"{d_avg['actions_attacking_p90']:.1f}",
+                     f"{d_game['actions_attacking_p90']:.1f}", f"{d_avg['actions_attacking_p90']:.1f}", ""),
+                ])
+            with col_ds2:
+                cmp_section_card("⚔️ Duels", DEF_TONES[1], [
+                    ("Defensive Duels", d_game["duels_p90"], f"{d_avg['duels_p90']:.1f}",
+                     f"{d_game['duels_p90']:.1f}", f"{d_avg['duels_p90']:.1f}", ""),
+                    ("% Duels Won", d_game["duels_won_pct"], d_avg["duels_won_pct"],
+                     f"{d_game['duels_won_pct']:.1f}%", f"{d_avg['duels_won_pct']:.1f}%", "",
+                     f"({d_real['duels_won']}/{d_real['total_duels']})"),
+                ])
+            with col_ds3:
+                cmp_section_card("🛡️ Funnel Protection Actions", DEF_TONES[2], [
+                    ("Funnel Protection Actions", d_game["funnel_actions_p90"], f"{d_avg['funnel_actions_p90']:.1f}",
+                     f"{d_game['funnel_actions_p90']:.1f}", f"{d_avg['funnel_actions_p90']:.1f}", ""),
+                    ("% FPA Successful", d_game["funnel_success_pct"], d_avg["funnel_success_pct"],
+                     f"{d_game['funnel_success_pct']:.1f}%", f"{d_avg['funnel_success_pct']:.1f}%", "",
+                     f"({d_real['funnel_successful']}/{d_real['funnel_actions']})"),
+                ])
+
+    with sub_tab_off:
+        st.markdown("### Match Filter")
+        col_of1, col_of2 = st.columns(2)
+        with col_of1:
+            off_match_options = ["All Matches"] + list(touches_dfs_by_match.keys())
+            selected_off_match = st.selectbox("Select Match", options=off_match_options, index=0, key="off_match")
+
+        if selected_off_match == "All Matches":
+            touches_game = pd.concat(touches_dfs_by_match.values(), ignore_index=True)
+            duels_game = pd.concat(offensive_duels_dfs_by_match.values(), ignore_index=True)
+            shots_game = pd.concat(shots_dfs_by_match.values(), ignore_index=True)
+            off_match_name_for_stats = "All Matches"
+        else:
+            touches_game = touches_dfs_by_match[selected_off_match].copy()
+            duels_game = offensive_duels_dfs_by_match[selected_off_match].copy()
+            shots_game = shots_dfs_by_match[selected_off_match].copy()
+            off_match_name_for_stats = selected_off_match
+
+        o_game = compute_offensive_stats(touches_game, duels_game, shots_game, off_match_name_for_stats)
+        o_avg = {}
+        if len(offensive_all_stats) > 0:
+            for k in offensive_all_stats[0].keys():
+                if isinstance(offensive_all_stats[0][k], (int, float)):
+                    o_avg[k] = sum(s[k] for s in offensive_all_stats) / len(offensive_all_stats)
+                else:
+                    o_avg[k] = 0
+        else:
+            o_avg = o_game.copy()
+
+        o_real = compute_offensive_stats(touches_game, duels_game, shots_game, off_match_name_for_stats)
+        force_avg_off = selected_off_match == "All Matches"
+        if force_avg_off:
+            o_game = o_avg.copy()
+
+        st.markdown("---")
+        img_th_game, fig_th_game = draw_touches_heatmap(touches_game); plt.close(fig_th_game)
+        img_od_game, fig_od_game = draw_offensive_duels_map(duels_game); plt.close(fig_od_game)
+        img_sh_game, fig_sh_game = draw_shots_map(shots_game); plt.close(fig_sh_game)
+
+        col_om1, col_om2, col_om3 = st.columns(3)
+        with col_om1:
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Touches Heatmap</div>', unsafe_allow_html=True)
+            st.image(img_th_game, use_container_width=True)
+        with col_om2:
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Offensive Duels Map</div>', unsafe_allow_html=True)
+            st.image(img_od_game, use_container_width=True)
+        with col_om3:
+            st.markdown('<div style="text-align:center;font-weight:600;font-size:14px;margin-bottom:6px;color:#cccccc">Shots Map</div>', unsafe_allow_html=True)
+            st.image(img_sh_game, use_container_width=True)
+
+        st.markdown("", unsafe_allow_html=True)
+        col_os1, col_os2, col_os3 = st.columns(3)
+        if force_avg_off:
+            with col_os1:
+                section_card("📋 Overview", OFF_TONES[0], [
+                    ("Touches", f"{o_game['touches_p90']:.2f}"),
+                    ("Final Third Touches", f"{o_game['f3_touches_p90']:.2f}"),
+                ])
+            with col_os2:
+                section_card("⚔️ Offensive Duels", OFF_TONES[1], [
+                    ("Offensive Duels", f"{o_game['off_duels_p90']:.2f}"),
+                    ("% Duels Won", f"{o_game['off_duels_won_pct']:.2f}%", f"({o_real['off_duels_won']}/{o_real['off_duels']})"),
+                ])
+            with col_os3:
+                section_card("🥅 Shots", OFF_TONES[2], [
+                    ("Shots", f"{o_game['shots_p90']:.2f}"),
+                    ("Goals", f"{o_game['goals']:.2f}"),
+                ])
+        else:
+            with col_os1:
+                cmp_section_card("📋 Overview", OFF_TONES[0], [
+                    ("Touches", o_game["touches_p90"], f"{o_avg['touches_p90']:.1f}",
+                     f"{o_game['touches_p90']:.1f}", f"{o_avg['touches_p90']:.1f}", ""),
+                    ("Final Third Touches", o_game["f3_touches_p90"], f"{o_avg['f3_touches_p90']:.1f}",
+                     f"{o_game['f3_touches_p90']:.1f}", f"{o_avg['f3_touches_p90']:.1f}", ""),
+                ])
+            with col_os2:
+                cmp_section_card("⚔️ Offensive Duels", OFF_TONES[1], [
+                    ("Offensive Duels", o_game["off_duels_p90"], f"{o_avg['off_duels_p90']:.1f}",
+                     f"{o_game['off_duels_p90']:.1f}", f"{o_avg['off_duels_p90']:.1f}", ""),
+                    ("% Duels Won", o_game["off_duels_won_pct"], o_avg["off_duels_won_pct"],
+                     f"{o_game['off_duels_won_pct']:.1f}%", f"{o_avg['off_duels_won_pct']:.1f}%", "",
+                     f"({o_real['off_duels_won']}/{o_real['off_duels']})"),
+                ])
+            with col_os3:
+                cmp_section_card("🥅 Shots", OFF_TONES[2], [
+                    ("Shots", o_game["shots_p90"], f"{o_avg['shots_p90']:.1f}",
+                     f"{o_game['shots_p90']:.1f}", f"{o_avg['shots_p90']:.1f}", ""),
+                    ("Goals", o_game["goals"], o_avg["goals"],
+                     f"{o_game['goals']:.0f}", f"{o_avg['goals']:.2f}", ""),
+                ])
+
+with tab_evo:
+    ELEGANT_CHARTS = st.toggle("Gráficos elegantes", value=False, key="elegant_charts")
+    max_compare = max(1, num_matches // 2)
+    default_n = min(10, max_compare)
+    n_compare = st.slider(
+        "Matches per comparison period",
+        min_value=1, max_value=max_compare, value=default_n,
+        help="Compare the average of the first N matches vs the last N matches.",
+        key="evo_n_compare",
+    )
+    st.caption(f"Comparing **first {n_compare}** vs **last {n_compare}** matches (of {num_matches} total).")
+
+    sub_tab_evo_passes, sub_tab_evo_def, sub_tab_evo_off = st.tabs(["Passes", "Defensive Actions", "Offensive Actions"])
+
+    with sub_tab_evo_passes:
+        st.markdown(f"### First {n_compare} vs Last {n_compare} Matches")
+        st.markdown("Compare average passing performance between the early and recent periods.")
+        df_scores = compute_match_scores(dfs_by_match, defensive_dfs_by_match, OFF_DICTS)
+        if len(df_scores) > 0:
+            if len(df_scores) < 2 * n_compare:
+                st.info(f"Note: Only {len(df_scores)} matches available — periods may overlap.")
+            first_p, last_p, n_eff = _evo_split(df_scores, n_compare)
+
+            r1c1, r1c2, r1c3 = st.columns(3)
+            with r1c1:
+                st.plotly_chart(draw_comparison_bar("Pass Grade", first_p["pass_grade"].mean(), last_p["pass_grade"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r1c2:
+                st.plotly_chart(draw_comparison_bar("Σ Pass Impact", first_p["xt_p90"].mean(), last_p["xt_p90"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r1c3:
+                st.plotly_chart(draw_comparison_bar("High Impact Passes", first_p["high_xt_p90"].mean(), last_p["high_xt_p90"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+
+            r2c1, r2c2, r2c3 = st.columns(3)
+            with r2c1:
+                st.plotly_chart(draw_comparison_bar("Progressive Passes", first_p["prog_p90"].mean(), last_p["prog_p90"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r2c2:
+                st.plotly_chart(draw_comparison_bar("Final Third Passes", first_p["f3_p90"].mean(), last_p["f3_p90"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r2c3:
+                st.plotly_chart(draw_comparison_bar("Dangerous Zone Passes", first_p["dz_p90"].mean(), last_p["dz_p90"].mean(), category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+
+            r3c1, r3c2, r3c3 = st.columns(3)
+            with r3c1:
+                st.plotly_chart(draw_comparison_bar("Successful Passes %", first_p["accuracy_pct"].mean(), last_p["accuracy_pct"].mean(), suffix="%", category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r3c2:
+                st.plotly_chart(draw_comparison_bar("Long Pass Accuracy %", first_p["long_acc_pct"].mean(), last_p["long_acc_pct"].mean(), suffix="%", category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with r3c3:
+                st.plotly_chart(draw_comparison_bar("Progressive Accuracy %", first_p["prog_acc_pct"].mean(), last_p["prog_acc_pct"].mean(), suffix="%", category="passes", n_first=n_eff, n_last=n_eff), use_container_width=True)
+        else:
+            st.warning("Not enough data to generate evolution charts.")
+
+    with sub_tab_evo_def:
+        st.markdown(f"### First {n_compare} vs Last {n_compare} Matches")
+        st.markdown("Compare average defensive performance between the early and recent periods.")
+        df_scores = compute_match_scores(dfs_by_match, defensive_dfs_by_match, OFF_DICTS)
+        df_def_evo = compute_defensive_evolution_df(defensive_dfs_by_match, df_scores)
+        if len(df_def_evo) > 0:
+            if len(df_def_evo) < 2 * n_compare:
+                st.info(f"Note: Only {len(df_def_evo)} matches available — periods may overlap.")
+            first_d, last_d, n_eff = _evo_split(df_def_evo, n_compare)
+
+            rd1c1, rd1c2, rd1c3 = st.columns(3)
+            with rd1c1:
+                g1 = first_d["grade"].dropna()
+                g2 = last_d["grade"].dropna()
+                v1 = g1.mean() if len(g1) > 0 else 0
+                v2 = g2.mean() if len(g2) > 0 else 0
+                st.plotly_chart(draw_comparison_bar("Defensive Actions Grade", v1, v2, category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with rd1c2:
+                st.plotly_chart(draw_comparison_bar("Duels Won p90", first_d["duels_won_p90"].mean(), last_d["duels_won_p90"].mean(), category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with rd1c3:
+                st.plotly_chart(draw_comparison_bar("% Duels Won", first_d["duels_won_pct"].mean(), last_d["duels_won_pct"].mean(), suffix="%", category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+
+            rd2c1, rd2c2, rd2c3 = st.columns(3)
+            with rd2c1:
+                st.plotly_chart(draw_comparison_bar("Defensive Actions p90", first_d["def_actions_p90"].mean(), last_d["def_actions_p90"].mean(), category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with rd2c2:
+                st.plotly_chart(draw_comparison_bar("Interceptions p90", first_d["interceptions_p90"].mean(), last_d["interceptions_p90"].mean(), category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with rd2c3:
+                st.plotly_chart(draw_comparison_bar("Funnel Actions p90", first_d["funnel_actions_p90"].mean(), last_d["funnel_actions_p90"].mean(), category="defensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+        else:
+            st.warning("Not enough data to generate defensive evolution charts.")
+
+    with sub_tab_evo_off:
+        st.markdown(f"### First {n_compare} vs Last {n_compare} Matches")
+        st.markdown("Compare average offensive performance between the early and recent periods.")
+        df_scores = compute_match_scores(dfs_by_match, defensive_dfs_by_match, OFF_DICTS)
+        if len(df_scores) > 0:
+            if len(df_scores) < 2 * n_compare:
+                st.info(f"Note: Only {len(df_scores)} matches available — periods may overlap.")
+            first_o, last_o, n_eff = _evo_split(df_scores, n_compare)
+
+            ro1c1, ro1c2, ro1c3 = st.columns(3)
+            with ro1c1:
+                st.plotly_chart(draw_comparison_bar("Offensive Grade", first_o["off_grade"].mean(), last_o["off_grade"].mean(), category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with ro1c2:
+                st.plotly_chart(draw_comparison_bar("Touches p90", first_o["touches_p90"].mean(), last_o["touches_p90"].mean(), category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with ro1c3:
+                st.plotly_chart(draw_comparison_bar("Final Third Touches p90", first_o["f3_touches_p90"].mean(), last_o["f3_touches_p90"].mean(), category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+
+            ro2c1, ro2c2, ro2c3 = st.columns(3)
+            with ro2c1:
+                st.plotly_chart(draw_comparison_bar("Offensive Duels p90", first_o["off_duels_p90"].mean(), last_o["off_duels_p90"].mean(), category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with ro2c2:
+                st.plotly_chart(draw_comparison_bar("% Off. Duels Won", first_o["off_duels_won_pct"].mean(), last_o["off_duels_won_pct"].mean(), suffix="%", category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+            with ro2c3:
+                st.plotly_chart(draw_comparison_bar("Shots p90", first_o["shots_p90"].mean(), last_o["shots_p90"].mean(), category="offensive", n_first=n_eff, n_last=n_eff), use_container_width=True)
+        else:
+            st.warning("Not enough data to generate offensive evolution charts.")
+
+
