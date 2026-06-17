@@ -958,10 +958,11 @@ def _body_target_c(border_color, items):
                  f'display:flex;align-items:center;justify-content:center">'
                  f'<div style="width:28px;height:28px;border-radius:50%;background:#14141f;'
                  f'display:flex;align-items:center;justify-content:center;'
-                 f'font-size:8px;font-weight:800;color:#ffffff">{pct:.0f}%</div></div>')
+                 f'font-size:8px;font-weight:800;color:#ffffff">·</div></div>')
         body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{accent};white-space:nowrap">'
-                 f'Target {disp_tgt}</span>'
-                 f'{_target_diff_badge_html(val, target)}</div></div>')
+                 f'Target {disp_tgt}</span>')
+        body += _target_diff_badge_html(val, target)
+        body += '</div></div>'
     return body
 
 def _body_target_d(border_color, items):
