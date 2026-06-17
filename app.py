@@ -865,7 +865,10 @@ def load_benchmark_targets(source: str) -> dict | None:
     path = Path(filename)
     if not path.exists():
         return None
-    df = pd.read_excel(path)
+    try:
+        df = pd.read_excel(path)
+    except ImportError:
+        return None
     if "Position" not in df.columns or "Minutes played" not in df.columns:
         return None
     df = df[df["Position"].isin(BENCHMARK_POSITIONS)].copy()
@@ -893,21 +896,22 @@ def load_benchmark_targets(source: str) -> dict | None:
 
 def build_metric_targets(pass_base: dict, def_base: dict, benchmark_source: str = "MLS") -> dict:
     bench = load_benchmark_targets(benchmark_source)
-    return {
+    targets = {
         "total_p90": bench["total_p90"] if bench else _rand_target(pass_base["total_p90"], "total_p90"),
         "accuracy_pct": bench["accuracy_pct"] if bench else _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
-        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base["advanced_passes_p90"], "advanced_passes_p90"),
-        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base["advanced_accuracy_pct"], "advanced_accuracy_pct", is_pct=True),
+        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base.get("prog_p90", 0), "advanced_passes_p90"),
+        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base.get("progressive_accuracy_pct", 0), "advanced_accuracy_pct", is_pct=True),
         "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
         "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
         "total_actions_p90": bench["total_actions_p90"] if bench else _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
-        "actions_own_p90": _rand_target(def_base["actions_own_p90"], "actions_own_p90"),
         "duels_p90": bench["duels_p90"] if bench else _rand_target(def_base["duels_p90"], "duels_p90"),
         "duels_won_pct": bench["duels_won_pct"] if bench else _rand_target(def_base["duels_won_pct"], "duels_won_pct", is_pct=True),
         "interceptions_p90": _rand_target(def_base["interceptions_p90"], "interceptions_p90"),
         "funnel_actions_p90": _rand_target(def_base["funnel_actions_p90"], "funnel_actions_p90"),
         "funnel_success_pct": _rand_target(def_base["funnel_success_pct"], "funnel_success_pct", is_pct=True),
     }
+    targets["actions_own_p90"] = round(targets["total_actions_p90"] * 0.7, 1)
+    return targets
 
 def _target_progress(val: float, target: float) -> float:
     if target <= 0:
@@ -947,7 +951,7 @@ def _metric_gradient_color(val: float, target: float) -> str:
 def _item_sep(idx, total):
     return "" if idx == total - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
 
-def _target_card_shell(title, border_color, body_html, compact=False):
+def _target_card_shell_html(title, border_color, body_html, compact=False):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
     grad = (f"linear-gradient(150deg, rgba({r},{g},{b},0.18) 0%, "
@@ -969,7 +973,10 @@ def _target_card_shell(title, border_color, body_html, compact=False):
     html += '</div>'
     html += body_html
     html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
+    return html
+
+def _target_card_shell(title, border_color, body_html, compact=False):
+    st.markdown(_target_card_shell_html(title, border_color, body_html, compact=compact), unsafe_allow_html=True)
 
 def _body_data_simple(items):
     body = ""
@@ -1137,8 +1144,7 @@ TARGET_BODY_BUILDERS = {
     "F — Scorecard": _body_target_f,
 }
 
-def _target_card_style_a(title, border_color, items, layout="combined"):
-    r, g, b = _accent_rgb(border_color)
+def _combined_body_a(border_color, items):
     body = ""
     for idx, item in enumerate(items):
         label, val, target = item[0], float(item[1]), float(item[2])
@@ -1163,13 +1169,9 @@ def _target_card_style_a(title, border_color, items, layout="combined"):
         if extra:
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px;text-align:right">{extra}</div>'
         body += '</div>'
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_a(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, body)
+    return body
 
-def _target_card_style_b(title, border_color, items, layout="combined"):
+def _combined_body_b(border_color, items):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgba({r},{g},{b},0.85)"
     body = ""
@@ -1177,7 +1179,7 @@ def _target_card_style_b(title, border_color, items, layout="combined"):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
-        status_key, status_label, status_color = _kpi_status(val, target)
+        _, status_label, status_color = _kpi_status(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
         body += f'<div style="{sep}">'
         body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
@@ -1197,13 +1199,9 @@ def _target_card_style_b(title, border_color, items, layout="combined"):
         if extra:
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px;text-align:center">{extra}</div>'
         body += '</div>'
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_b(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, body)
+    return body
 
-def _target_card_style_c(title, border_color, items, layout="combined"):
+def _combined_body_c(border_color, items):
     r, g, b = _accent_rgb(border_color)
     accent = f"rgb({r},{g},{b})"
     body = ""
@@ -1237,15 +1235,9 @@ def _target_card_style_c(title, border_color, items, layout="combined"):
         if extra:
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px">{extra}</div>'
         body += '</div></div></div>'
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_c(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, body)
+    return body
 
-def _target_card_style_d(title, border_color, items, layout="combined"):
-    """KPI badge — traffic-light status (Hit / Close / Miss) with value vs target."""
-    r, g, b = _accent_rgb(border_color)
+def _combined_body_d(border_color, items):
     body = ""
     for idx, item in enumerate(items):
         label, val, target = item[0], float(item[1]), float(item[2])
@@ -1270,16 +1262,9 @@ def _target_card_style_d(title, border_color, items, layout="combined"):
         if extra:
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px">{extra}</div>'
         body += '</div></div></div>'
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_d(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, body)
+    return body
 
-def _target_card_style_e(title, border_color, items, layout="combined"):
-    """Bullet chart — value bar with target marker and zone coloring."""
-    r, g, b = _accent_rgb(border_color)
-    accent = f"rgb({r},{g},{b})"
+def _combined_body_e(border_color, items):
     body = ""
     for idx, item in enumerate(items):
         label, val, target = item[0], float(item[1]), float(item[2])
@@ -1311,22 +1296,15 @@ def _target_card_style_e(title, border_color, items, layout="combined"):
         if extra:
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:3px;text-align:right">{extra}</div>'
         body += '</div>'
-    if layout == "separated":
-        _target_card_shell(title, border_color, _body_data_simple(items))
-        _target_card_shell(f"{title} — Target", border_color, _body_target_e(border_color, items), compact=True)
-    else:
-        _target_card_shell(title, border_color, body)
+    return body
 
-def _target_card_style_f(title, border_color, items, layout="combined"):
-    """Scorecard — compact KPI tiles with hit/close/miss border glow."""
-    r, g, b = _accent_rgb(border_color)
+def _combined_body_f(border_color, items):
     body = '<div style="display:flex;flex-direction:column;gap:10px">'
     for item in items:
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
-        status_key, status_label, status_color = _kpi_status(val, target)
-        pct = min(_target_progress(val, target), 100.0)
+        _, status_label, status_color = _kpi_status(val, target)
         glow = f"0 0 12px {status_color}55"
         body += (f'<div style="background:rgba(0,0,0,0.25);border:1px solid {status_color};'
                  f'border-radius:12px;padding:12px 14px;box-shadow:{glow}">')
@@ -1343,11 +1321,61 @@ def _target_card_style_f(title, border_color, items, layout="combined"):
             body += f'<div style="font-size:{CARD_CAPTION};color:#64748b;margin-top:4px">{extra}</div>'
         body += '</div>'
     body += '</div>'
+    return body
+
+COMBINED_BODY_BUILDERS = {
+    "A — Progress Bar": _combined_body_a,
+    "B — Side by Side": _combined_body_b,
+    "C — Gauge Pill": _combined_body_c,
+    "D — KPI Badge": _combined_body_d,
+    "E — Bullet Chart": _combined_body_e,
+    "F — Scorecard": _combined_body_f,
+}
+
+def _target_card_style_a(title, border_color, items, layout="combined"):
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_a(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, _combined_body_a(border_color, items))
+
+def _target_card_style_b(title, border_color, items, layout="combined"):
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_b(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, _combined_body_b(border_color, items))
+
+def _target_card_style_c(title, border_color, items, layout="combined"):
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_c(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, _combined_body_c(border_color, items))
+
+def _target_card_style_d(title, border_color, items, layout="combined"):
+    """KPI badge — traffic-light status (Hit / Close / Miss) with value vs target."""
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_d(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, _combined_body_d(border_color, items))
+
+def _target_card_style_e(title, border_color, items, layout="combined"):
+    """Bullet chart — value bar with target marker and zone coloring."""
+    if layout == "separated":
+        _target_card_shell(title, border_color, _body_data_simple(items))
+        _target_card_shell(f"{title} — Target", border_color, _body_target_e(border_color, items), compact=True)
+    else:
+        _target_card_shell(title, border_color, _combined_body_e(border_color, items))
+
+def _target_card_style_f(title, border_color, items, layout="combined"):
+    """Scorecard — compact KPI tiles with hit/close/miss border glow."""
     if layout == "separated":
         _target_card_shell(title, border_color, _body_data_simple(items))
         _target_card_shell(f"{title} — Target", border_color, _body_target_f(border_color, items), compact=True)
     else:
-        _target_card_shell(title, border_color, body)
+        _target_card_shell(title, border_color, _combined_body_f(border_color, items))
 
 TARGET_CARD_STYLES = {
     "A — Progress Bar": _target_card_style_a,
@@ -1358,9 +1386,97 @@ TARGET_CARD_STYLES = {
     "F — Scorecard": _target_card_style_f,
 }
 
-def target_section_card(title, border_color, items, style_key, layout_mode="combined"):
+CARD_EXPORT_WIDTH = 560
+CARD_EXPORT_SCALE = 3
+CARD_EXPORT_DPI = 300
+
+def build_target_card_html(title, border_color, items, style_key, layout_mode="combined") -> str:
+    target_builder = TARGET_BODY_BUILDERS.get(style_key, _body_target_a)
+    combined_builder = COMBINED_BODY_BUILDERS.get(style_key, _combined_body_a)
+    if layout_mode == "separated":
+        inner = (
+            _target_card_shell_html(title, border_color, _body_data_simple(items))
+            + _target_card_shell_html(
+                f"{title} — Target", border_color,
+                target_builder(border_color, items), compact=True,
+            )
+        )
+    else:
+        inner = _target_card_shell_html(title, border_color, combined_builder(border_color, items))
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="utf-8">'
+        f'<style>html,body{{margin:0;padding:24px;background:#0f0f1a;width:{CARD_EXPORT_WIDTH}px;'
+        f'font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;}}</style>'
+        f'</head><body>{inner}</body></html>'
+    )
+
+def _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI) -> bytes:
+    from matplotlib.patches import FancyBboxPatch
+    r, g, b = _accent_rgb(border_color)
+    accent = (r / 255.0, g / 255.0, b / 255.0)
+    rows = []
+    if layout_mode == "separated":
+        for item in items:
+            rows.append((item[0], str(item[3]), "", "#eef1f7"))
+        for item in items:
+            _, status_label, status_color = _kpi_status(float(item[1]), float(item[2]))
+            diff = _target_pct_diff(float(item[1]), float(item[2]))
+            badge = f"+{diff:.0f}%" if diff > 0 else f"{diff:.0f}%"
+            rows.append((item[0], str(item[3]), f"Target {item[4]} · {status_label} · {badge}", status_color))
+    else:
+        for item in items:
+            _, status_label, status_color = _kpi_status(float(item[1]), float(item[2]))
+            diff = _target_pct_diff(float(item[1]), float(item[2]))
+            badge = f"+{diff:.0f}%" if diff > 0 else f"{diff:.0f}%"
+            rows.append((item[0], str(item[3]), f"Target {item[4]} · {status_label} · {badge}", status_color))
+    fig_w = (CARD_EXPORT_WIDTH / CARD_EXPORT_DPI) * CARD_EXPORT_SCALE
+    fig_h = (1.35 + len(rows) * 0.58) * CARD_EXPORT_SCALE
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=CARD_EXPORT_DPI)
+    fig.patch.set_facecolor("#0f0f1a")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    card = FancyBboxPatch(
+        (0.03, 0.04), 0.94, 0.92, boxstyle="round,pad=0.02,rounding_size=0.03",
+        linewidth=1.2, edgecolor=accent, facecolor=(0.10, 0.10, 0.16, 1.0),
+    )
+    ax.add_patch(card)
+    ax.plot([0.05, 0.95], [0.90, 0.90], color=accent, linewidth=2.5)
+    ax.text(0.06, 0.94, title.upper(), color="#eef1f7", fontsize=13, fontweight="bold", va="top")
+    y = 0.84
+    for label, value, subline, color in rows:
+        ax.text(0.07, y, label, color="#c7cdda", fontsize=10, fontweight="bold", va="top")
+        ax.text(0.93, y, value, color="#ffffff", fontsize=16, fontweight="bold", ha="right", va="top")
+        if subline:
+            ax.text(0.07, y - 0.055, subline, color=color, fontsize=9, va="top")
+            y -= 0.13
+        else:
+            y -= 0.09
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, facecolor="#0f0f1a", bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+def export_target_card_png(
+    title, border_color, items, style_key, layout_mode="combined",
+) -> bytes:
+    return _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI)
+
+def target_section_card(title, border_color, items, style_key, layout_mode="combined", export_key=None):
     renderer = TARGET_CARD_STYLES.get(style_key, _target_card_style_a)
     renderer(title, border_color, items, layout=layout_mode)
+    if export_key:
+        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title.strip()) or "card"
+        png_bytes = export_target_card_png(title, border_color, items, style_key, layout_mode)
+        st.download_button(
+            label="Export card PNG (HD)",
+            data=png_bytes,
+            file_name=f"Hudson_{safe_name}.png",
+            mime="image/png",
+            key=export_key,
+            use_container_width=True,
+        )
 
 # ── DRAW HELPERS (PITCH) ───────────────────────────────────────
 def _base_pitch(bg="#1a1a2e"):
@@ -1795,11 +1911,11 @@ def generate_season_pdf(card_tones=None, benchmark_source="MLS"):
             ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
              s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
         ], ps, col_w),
-        _pdf_dark_card(tones[1], "Advanced", [
-            ("Advanced Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
-             s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
-            ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
-             s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
+        _pdf_dark_card(tones[1], "Progressive", [
+            ("Progressive Passes Per Game", f"{s_pass['prog_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
+             s_pass["prog_p90"], T_pdf["advanced_passes_p90"]),
+            ("% Progressive Accuracy", f"{s_pass['progressive_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
+             s_pass["progressive_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
         ], ps, col_w),
         _pdf_dark_card(tones[2], "Impact", [
             ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
@@ -2052,24 +2168,21 @@ with tab_dash:
                  f"{s_game['total_p90']:.1f}", f"{T['total_p90']:.1f}"),
                 ("% Accuracy", s_game["accuracy_pct"], T["accuracy_pct"],
                  f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode)
+            ], CARD_STYLE, _layout_mode, export_key="pass_overview_png")
         with col_s2:
-            target_section_card("Advanced", ACTIVE_CARD_TONES[1], [
-                ("Advanced Passes Per Game", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
-                 f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
-                ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
-                 f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode)
+            target_section_card("Progressive", ACTIVE_CARD_TONES[1], [
+                ("Progressive Passes Per Game", s_game["prog_p90"], T["advanced_passes_p90"],
+                 f"{s_game['prog_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
+                ("% Progressive Accuracy", s_game["progressive_accuracy_pct"], T["advanced_accuracy_pct"],
+                 f"{s_game['progressive_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
+            ], CARD_STYLE, _layout_mode, export_key="pass_progressive_png")
         with col_s3:
             target_section_card("Impact", ACTIVE_CARD_TONES[2], [
                 ("Pass Impact Value Per Game", s_game["xt_p90"], T["xt_p90"],
                  f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}"),
                 ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
                  f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode)
-
-    # ═══════════════════════════════════════════════════════════
-    # DEFENSIVE ACTIONS TAB
+            ], CARD_STYLE, _layout_mode, export_key="pass_impact_png")
     # ═══════════════════════════════════════════════════════════
     with sub_tab_def:
         st.markdown("### Match Filter")
@@ -2138,18 +2251,18 @@ with tab_dash:
                  f"{d_game['total_actions_p90']:.1f}", f"{T['total_actions_p90']:.1f}"),
                 ("Actions in Own Half Per Game", d_game["actions_own_p90"], T["actions_own_p90"],
                  f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
-            ], CARD_STYLE, _layout_mode)
+            ], CARD_STYLE, _layout_mode, export_key="def_overview_png")
         with col_ds2:
             target_section_card("Duels", ACTIVE_CARD_TONES[1], [
                 ("Defensive Duels Per Game", d_game["duels_p90"], T["duels_p90"],
                  f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
                 ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
                  f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode)
+            ], CARD_STYLE, _layout_mode, export_key="def_duels_png")
         with col_ds3:
             target_section_card("Funnel Protection", ACTIVE_CARD_TONES[2], [
                 ("Funnel Protection Actions Per Game", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
                  f"{d_game['funnel_actions_p90']:.1f}", f"{T['funnel_actions_p90']:.1f}"),
                 ("% FPA Successful", d_game["funnel_success_pct"], T["funnel_success_pct"],
                  f"{d_game['funnel_success_pct']:.1f}%", f"{T['funnel_success_pct']:.1f}%"),
-            ], CARD_STYLE, _layout_mode)
+            ], CARD_STYLE, _layout_mode, export_key="def_funnel_png")
