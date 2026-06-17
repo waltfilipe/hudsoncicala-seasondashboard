@@ -1,6 +1,7 @@
 import re
 import os
 import math
+import tempfile
 from pathlib import Path
 from io import BytesIO
 import streamlit as st
@@ -899,8 +900,8 @@ def build_metric_targets(pass_base: dict, def_base: dict, benchmark_source: str 
     targets = {
         "total_p90": bench["total_p90"] if bench else _rand_target(pass_base["total_p90"], "total_p90"),
         "accuracy_pct": bench["accuracy_pct"] if bench else _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
-        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base.get("prog_p90", 0), "advanced_passes_p90"),
-        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base.get("progressive_accuracy_pct", 0), "advanced_accuracy_pct", is_pct=True),
+        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base.get("advanced_passes_p90", 0), "advanced_passes_p90"),
+        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base.get("advanced_accuracy_pct", 0), "advanced_accuracy_pct", is_pct=True),
         "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
         "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
         "total_actions_p90": bench["total_actions_p90"] if bench else _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
@@ -1406,9 +1407,66 @@ def build_target_card_html(title, border_color, items, style_key, layout_mode="c
     return (
         f'<!DOCTYPE html><html><head><meta charset="utf-8">'
         f'<style>html,body{{margin:0;padding:24px;background:#0f0f1a;width:{CARD_EXPORT_WIDTH}px;'
-        f'font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;}}</style>'
-        f'</head><body>{inner}</body></html>'
+        f'font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;}}'
+        f'#card-export-root{{display:inline-block;width:100%;}}</style>'
+        f'</head><body><div id="card-export-root">{inner}</div></body></html>'
     )
+
+def _screenshot_html_png(html: str) -> bytes | None:
+    """Render dashboard card HTML to PNG (pixel-accurate). Playwright first, html2image fallback."""
+    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
+        f.write(html)
+        path = f.name
+    try:
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(
+                    viewport={"width": CARD_EXPORT_WIDTH + 48, "height": 1400},
+                    device_scale_factor=CARD_EXPORT_SCALE,
+                )
+                page.goto(f"file://{path}", wait_until="load")
+                page.wait_for_timeout(150)
+                png = page.locator("#card-export-root").screenshot(type="png")
+                browser.close()
+            return png
+        except Exception:
+            pass
+        try:
+            from html2image import Html2Image
+            chrome_paths = [
+                "/usr/local/bin/google-chrome",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+            ]
+            chrome_exe = next((p for p in chrome_paths if os.path.isfile(p)), None)
+            user_dir = tempfile.mkdtemp()
+            flags = [
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                f"--user-data-dir={user_dir}",
+                "--headless=new",
+            ]
+            hti = Html2Image(
+                browser_executable=chrome_exe,
+                custom_flags=flags,
+                size=(CARD_EXPORT_WIDTH + 48, 1400),
+            )
+            out_dir = tempfile.mkdtemp()
+            hti.output_path = out_dir
+            hti.screenshot(html_file=path, save_as="card.png")
+            out_path = os.path.join(out_dir, "card.png")
+            if os.path.isfile(out_path):
+                with open(out_path, "rb") as img_f:
+                    return img_f.read()
+        except Exception:
+            pass
+        return None
+    finally:
+        os.unlink(path)
 
 def _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI) -> bytes:
     from matplotlib.patches import FancyBboxPatch
@@ -1461,6 +1519,10 @@ def _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CAR
 def export_target_card_png(
     title, border_color, items, style_key, layout_mode="combined",
 ) -> bytes:
+    html = build_target_card_html(title, border_color, items, style_key, layout_mode)
+    png = _screenshot_html_png(html)
+    if png:
+        return png
     return _export_card_png_matplotlib(title, border_color, items, layout_mode, dpi=CARD_EXPORT_DPI)
 
 def target_section_card(title, border_color, items, style_key, layout_mode="combined", export_key=None):
@@ -1912,10 +1974,10 @@ def generate_season_pdf(card_tones=None, benchmark_source="MLS"):
              s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
         ], ps, col_w),
         _pdf_dark_card(tones[1], "Progressive", [
-            ("Progressive Passes Per Game", f"{s_pass['prog_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
-             s_pass["prog_p90"], T_pdf["advanced_passes_p90"]),
-            ("% Progressive Accuracy", f"{s_pass['progressive_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
-             s_pass["progressive_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
+            ("Progressive Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
+             s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
+            ("% Progressive Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
+             s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
         ], ps, col_w),
         _pdf_dark_card(tones[2], "Impact", [
             ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
@@ -2171,10 +2233,10 @@ with tab_dash:
             ], CARD_STYLE, _layout_mode, export_key="pass_overview_png")
         with col_s2:
             target_section_card("Progressive", ACTIVE_CARD_TONES[1], [
-                ("Progressive Passes Per Game", s_game["prog_p90"], T["advanced_passes_p90"],
-                 f"{s_game['prog_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
-                ("% Progressive Accuracy", s_game["progressive_accuracy_pct"], T["advanced_accuracy_pct"],
-                 f"{s_game['progressive_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
+                ("Progressive Passes Per Game", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
+                 f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
+                ("% Progressive Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
+                 f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode, export_key="pass_progressive_png")
         with col_s3:
             target_section_card("Impact", ACTIVE_CARD_TONES[2], [
