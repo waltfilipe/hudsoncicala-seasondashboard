@@ -87,6 +87,7 @@ C_BLUE_PASTEL = "#5b9bd5"
 C_GREEN_PASTEL = "#70ad47"
 C_AMBER_PASTEL = "#d4a843"
 PASS_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
+GRAY_TONES = ["#b8c0cc", "#8b93a7", "#6b7280"]
 DEF_TONES = ["#5b9bd5", "#3b82f6", "#1d4ed8"]
 CMAP_TOP10 = LinearSegmentedColormap.from_list("top10", ["#fef08a", "#f97316", "#b91c1c"])
 NORM_TOP10 = Normalize(vmin=0.05, vmax=0.40)
@@ -874,7 +875,7 @@ def _target_progress(val: float, target: float) -> float:
     return float(np.clip((val / target) * 100.0, 0.0, 130.0))
 
 def _kpi_status(val: float, target: float) -> tuple:
-    """Return (status_key, label, color) — hit, close, or miss vs target."""
+    """Return (status_key, label, color) — hit, close, miss, or miss_target vs target."""
     diff_pct = _target_pct_diff(val, target)
     color, _ = _diff_gradient_color(diff_pct)
     pct = _target_progress(val, target)
@@ -882,7 +883,22 @@ def _kpi_status(val: float, target: float) -> tuple:
         return "hit", "Target Hit", color
     if pct >= 85.0:
         return "close", "Close to Target", color
+    if pct < 10.0:
+        return "miss_target", "Miss Target", color
     return "miss", "Below Target", color
+
+def _kpi_icon(status_key: str) -> str:
+    if status_key == "hit":
+        return "✓"
+    if status_key == "close":
+        return "~"
+    if status_key == "miss_target":
+        return "✗"
+    return "−"
+
+def _metric_gradient_color(val: float, target: float) -> str:
+    color, _ = _diff_gradient_color(_target_pct_diff(val, target))
+    return color
 
 def _item_sep(idx, total):
     return "" if idx == total - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
@@ -940,11 +956,13 @@ def _body_target_a(border_color, items):
         disp_tgt = item[4]
         pct = _target_progress(val, target)
         bar_pct = min(pct, 100.0)
-        bar_color = "#22c55e" if val >= target else "#3b82f6" if pct >= 75 else "#f59e0b"
+        _, status_label, status_color = _kpi_status(val, target)
+        bar_color = _metric_gradient_color(val, target)
         body += f'<div style="{_item_sep(idx, len(items))}">'
         body += _body_target_row_header(
             label,
-            f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7;white-space:nowrap">Target <b style="color:#eef1f7">{disp_tgt}</b></span>',
+            (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
+             f'{status_label} · Target <b style="color:#eef1f7">{disp_tgt}</b></span>'),
         )
         body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
                  f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
@@ -959,19 +977,19 @@ def _body_target_b(border_color, items):
     for idx, item in enumerate(items):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_tgt = item[4]
-        status = "Above target" if val >= target else "Below target"
-        status_color, _ = _diff_gradient_color(_target_pct_diff(val, target))
+        status_key, status_label, status_color = _kpi_status(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:10px;"
         body += f'<div style="{sep}">'
         body += _body_target_row_header(
             label,
-            f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">{status}</span>',
+            f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">{status_label}</span>',
         )
         body += (f'<div style="display:flex;align-items:center;justify-content:center;gap:8px;'
                  f'border-radius:10px;padding:8px 12px;border:1px solid rgba({r},{g},{b},0.25);'
                  f'background:rgba({r},{g},{b},0.12)">'
                  f'<span style="font-size:{CARD_CAPTION};font-weight:700;letter-spacing:1px;color:{accent}">TARGET</span>'
-                 f'<span style="font-size:22px;font-weight:800;color:{accent}">{disp_tgt}</span></div></div>')
+                 f'<span style="font-size:22px;font-weight:800;color:{accent}">{disp_tgt}</span></div>')
+        body += f'<div style="display:flex;justify-content:center;gap:8px;align-items:center;margin-top:6px">{_target_diff_badge_html(val, target)}</div></div>'
     return body
 
 def _body_target_c(border_color, items):
@@ -982,7 +1000,8 @@ def _body_target_c(border_color, items):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_tgt = item[4]
         pct = min(_target_progress(val, target), 100.0)
-        ring_color = "#22c55e" if val >= target else accent
+        _, status_label, status_color = _kpi_status(val, target)
+        ring_color = _metric_gradient_color(val, target)
         body += f'<div style="{_item_sep(idx, len(items))}">'
         body += '<div style="display:flex;align-items:center;gap:10px">'
         body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
@@ -992,6 +1011,8 @@ def _body_target_c(border_color, items):
                  f'<div style="width:28px;height:28px;border-radius:50%;background:#14141f;'
                  f'display:flex;align-items:center;justify-content:center;'
                  f'font-size:8px;font-weight:800;color:#ffffff">·</div></div>')
+        body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color};white-space:nowrap">'
+                 f'{status_label}</span>')
         body += (f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{accent};white-space:nowrap">'
                  f'Target {disp_tgt}</span>')
         body += _target_diff_badge_html(val, target)
@@ -1004,8 +1025,7 @@ def _body_target_d(border_color, items):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_tgt = item[4]
         status_key, status_label, status_color = _kpi_status(val, target)
-        pct = min(_target_progress(val, target), 100.0)
-        icon = "✓" if status_key == "hit" else "~" if status_key == "close" else "✗"
+        icon = _kpi_icon(status_key)
         body += f'<div style="{_item_sep(idx, len(items))}">'
         body += '<div style="display:flex;align-items:center;gap:10px">'
         body += f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:700;color:#eef1f7;flex:1;min-width:0">{label}</span>'
@@ -1031,7 +1051,7 @@ def _body_target_e(border_color, items):
         _, status_label, status_color = _kpi_status(val, target)
         max_scale = max(target * 1.15, val, target, 0.01)
         target_pos = min((target / max_scale) * 100.0, 100.0)
-        bar_color = "#22c55e" if val >= target else "#f59e0b" if pct >= 85 else accent
+        bar_color = _metric_gradient_color(val, target)
         body += f'<div style="{_item_sep(idx, len(items))}">'
         body += _body_target_row_header(
             label,
@@ -1082,13 +1102,16 @@ def _target_card_style_a(title, border_color, items, layout="combined"):
         extra = item[5] if len(item) > 5 else ""
         pct = _target_progress(val, target)
         bar_pct = min(pct, 100.0)
-        bar_color = "#22c55e" if val >= target else "#3b82f6" if pct >= 75 else "#f59e0b"
+        _, status_label, status_color = _kpi_status(val, target)
+        bar_color = _metric_gradient_color(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
         body += f'<div style="{sep}">'
         body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:6px">{label}</div>'
         body += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
         body += f'<span style="font-size:24px;font-weight:800;color:#ffffff">{disp_val}</span>'
-        body += f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7">Target <b style="color:#eef1f7">{disp_tgt}</b></span>'
+        body += (f'<span style="font-size:{CARD_SUBTEXT};color:#8b93a7">'
+                 f'<span style="color:{status_color};font-weight:700">{status_label}</span> · '
+                 f'Target <b style="color:#eef1f7">{disp_tgt}</b></span>')
         body += '</div>'
         body += (f'<div style="height:7px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">'
                  f'<div style="width:{bar_pct:.1f}%;height:100%;background:{bar_color};border-radius:999px"></div></div>')
@@ -1110,11 +1133,12 @@ def _target_card_style_b(title, border_color, items, layout="combined"):
         label, val, target = item[0], float(item[1]), float(item[2])
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
-        status = "Above target" if val >= target else "Below target"
-        status_color, _ = _diff_gradient_color(_target_pct_diff(val, target))
+        status_key, status_label, status_color = _kpi_status(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:12px;"
         body += f'<div style="{sep}">'
-        body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
+        body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+                 f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda">{label}</span>'
+                 f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color}">{status_label}</span></div>')
         body += (f'<div style="display:flex;border-radius:12px;overflow:hidden;'
                  f'border:1px solid rgba({r},{g},{b},0.25);background:rgba(0,0,0,0.20)">')
         body += ('<div style="flex:1;padding:12px 10px;text-align:center">'
@@ -1144,7 +1168,8 @@ def _target_card_style_c(title, border_color, items, layout="combined"):
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
         pct = min(_target_progress(val, target), 100.0)
-        ring_color = "#22c55e" if val >= target else accent
+        _, status_label, status_color = _kpi_status(val, target)
+        ring_color = _metric_gradient_color(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
         body += f'<div style="{sep}">'
         body += '<div style="display:flex;align-items:center;gap:10px">'
@@ -1155,7 +1180,9 @@ def _target_card_style_c(title, border_color, items, layout="combined"):
                  f'display:flex;align-items:center;justify-content:center;'
                  f'font-size:8px;font-weight:800;color:#ffffff">·</div></div>')
         body += '<div style="flex:1;min-width:0">'
-        body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:4px">{label}</div>'
+        body += (f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+                 f'<span style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda">{label}</span>'
+                 f'<span style="font-size:{CARD_SUBTEXT};font-weight:700;color:{status_color}">{status_label}</span></div>')
         body += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
         body += (f'<span style="font-size:20px;font-weight:800;color:#ffffff;background:rgba({r},{g},{b},0.18);'
                  f'border:1px solid rgba({r},{g},{b},0.35);border-radius:999px;padding:2px 12px">{disp_val}</span>')
@@ -1181,8 +1208,7 @@ def _target_card_style_d(title, border_color, items, layout="combined"):
         disp_val, disp_tgt = item[3], item[4]
         extra = item[5] if len(item) > 5 else ""
         status_key, status_label, status_color = _kpi_status(val, target)
-        pct = min(_target_progress(val, target), 100.0)
-        icon = "✓" if status_key == "hit" else "~" if status_key == "close" else "✗"
+        icon = _kpi_icon(status_key)
         sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
         body += f'<div style="{sep}">'
         body += f'<div style="font-size:{CARD_LABEL_TEXT};font-weight:600;color:#c7cdda;margin-bottom:8px">{label}</div>'
@@ -1220,7 +1246,7 @@ def _target_card_style_e(title, border_color, items, layout="combined"):
         _, status_label, status_color = _kpi_status(val, target)
         max_scale = max(target * 1.15, val, target, 0.01)
         target_pos = min((target / max_scale) * 100.0, 100.0)
-        bar_color = "#22c55e" if val >= target else "#f59e0b" if pct >= 85 else accent
+        bar_color = _metric_gradient_color(val, target)
         sep = "" if idx == len(items) - 1 else "margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.07);"
         body += f'<div style="{sep}">'
         body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
@@ -1547,6 +1573,8 @@ def _pdf_status_text(val, target):
         return "Target Hit", color
     if pct >= 85.0:
         return "Close to Target", color
+    if pct < 10.0:
+        return "Miss Target", color
     return "Below Target", color
 
 def _pdf_usable_width():
@@ -1657,9 +1685,10 @@ def _pdf_dashboard_section(section_title, map_entries, stat_cards, pstyles):
         cards_row,
     ]
 
-def generate_season_pdf():
+def generate_season_pdf(card_tones=None):
     if not PDF_AVAILABLE:
         raise RuntimeError("reportlab is not installed. Run: pip install reportlab")
+    tones = card_tones or PASS_TONES
 
     df_pass = pd.concat(dfs_by_match.values(), ignore_index=True)
     df_def = pd.concat(defensive_dfs_by_match.values(), ignore_index=True)
@@ -1715,22 +1744,21 @@ def generate_season_pdf():
         ("Top 10 Pass Impact", buf_xt),
     ]
     pass_cards = [
-        _pdf_dark_card(PASS_TONES[0], "Overview", [
+        _pdf_dark_card(tones[0], "Overview", [
             ("Total Passes Per Game", f"{s_pass['total_p90']:.1f}", f"{T_pdf['total_p90']:.1f}",
              s_pass["total_p90"], T_pdf["total_p90"]),
             ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
              s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
         ], ps, col_w),
-        _pdf_dark_card(PASS_TONES[1], "Advanced", [
+        _pdf_dark_card(tones[1], "Advanced", [
             ("Advanced Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
              s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
             ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
              s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
         ], ps, col_w),
-        _pdf_dark_card(PASS_TONES[2], "Impact", [
-            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
+        _pdf_dark_card(tones[2], "Impact", [
+            ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f} ({total_impact:.1f})", f"{T_pdf['xt_p90']:.1f}",
              s_pass["xt_p90"], T_pdf["xt_p90"]),
-            ("Total Impact", f"{total_impact:.3f}", "—", total_impact, total_impact),
             ("% Positive Impact", f"{s_pass['pos_pct']:.1f}%", f"{T_pdf['pos_pct']:.1f}%",
              s_pass["pos_pct"], T_pdf["pos_pct"]),
         ], ps, col_w),
@@ -1742,19 +1770,19 @@ def generate_season_pdf():
         ("Funnel Protection Actions", _pil_to_png_bytes(img_fun)),
     ]
     def_cards = [
-        _pdf_dark_card(PASS_TONES[0], "Overview", [
+        _pdf_dark_card(tones[0], "Overview", [
             ("Defensive Actions Per Game", f"{d_def['total_actions_p90']:.1f}", f"{T_pdf['total_actions_p90']:.1f}",
              d_def["total_actions_p90"], T_pdf["total_actions_p90"]),
             ("Actions in Own Half Per Game", f"{d_def['actions_own_p90']:.1f}", f"{T_pdf['actions_own_p90']:.1f}",
              d_def["actions_own_p90"], T_pdf["actions_own_p90"]),
         ], ps, col_w),
-        _pdf_dark_card(PASS_TONES[1], "Duels", [
+        _pdf_dark_card(tones[1], "Duels", [
             ("Defensive Duels Per Game", f"{d_def['duels_p90']:.1f}", f"{T_pdf['duels_p90']:.1f}",
              d_def["duels_p90"], T_pdf["duels_p90"]),
             ("% Duels Won", f"{d_def['duels_won_pct']:.1f}%", f"{T_pdf['duels_won_pct']:.1f}%",
              d_def["duels_won_pct"], T_pdf["duels_won_pct"]),
         ], ps, col_w),
-        _pdf_dark_card(PASS_TONES[2], "Funnel Protection", [
+        _pdf_dark_card(tones[2], "Funnel Protection", [
             ("Funnel Protection Actions Per Game", f"{d_def['funnel_actions_p90']:.1f}",
              f"{T_pdf['funnel_actions_p90']:.1f}", d_def["funnel_actions_p90"], T_pdf["funnel_actions_p90"]),
             ("% FPA Successful", f"{d_def['funnel_success_pct']:.1f}%", f"{T_pdf['funnel_success_pct']:.1f}%",
@@ -1793,29 +1821,6 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("#### Export Report")
-if not PDF_AVAILABLE:
-    st.sidebar.warning("Install reportlab to enable PDF export: `pip install reportlab`")
-else:
-    if st.sidebar.button("Generate PDF Report", type="primary", use_container_width=True):
-        with st.spinner("Building season report..."):
-            try:
-                pdf_bytes = generate_season_pdf()
-                st.session_state["pdf_report"] = pdf_bytes
-                st.sidebar.success("Report ready!")
-            except Exception as exc:
-                st.sidebar.error(f"PDF error: {exc}")
-    if "pdf_report" in st.session_state:
-        st.sidebar.download_button(
-            label="Download PDF",
-            data=st.session_state["pdf_report"],
-            file_name="Hudson_Cicala_Season_Report.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-        st.sidebar.caption("All Matches • Passes & Defensive Actions")
-
-st.sidebar.markdown("---")
 st.sidebar.markdown("#### Stats Card Style")
 CARD_STYLE = st.sidebar.radio(
     "Choose visual layout",
@@ -1830,6 +1835,38 @@ CARD_LAYOUT = st.sidebar.radio(
     help="Separated shows data in one card and target comparison in a second card below.",
 )
 _layout_mode = "separated" if CARD_LAYOUT == "Separated" else "combined"
+
+st.sidebar.markdown("#### Card Color")
+CARD_TONE_SCHEME = st.sidebar.radio(
+    "Accent palette",
+    options=["Blue", "Gray"],
+    index=0,
+    help="Blue uses the default accent tones; Gray uses neutral gray card borders.",
+)
+ACTIVE_CARD_TONES = GRAY_TONES if CARD_TONE_SCHEME == "Gray" else PASS_TONES
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("#### Export Report")
+if not PDF_AVAILABLE:
+    st.sidebar.warning("Install reportlab to enable PDF export: `pip install reportlab`")
+else:
+    if st.sidebar.button("Generate PDF Report", type="primary", use_container_width=True):
+        with st.spinner("Building season report..."):
+            try:
+                pdf_bytes = generate_season_pdf(card_tones=ACTIVE_CARD_TONES)
+                st.session_state["pdf_report"] = pdf_bytes
+                st.sidebar.success("Report ready!")
+            except Exception as exc:
+                st.sidebar.error(f"PDF error: {exc}")
+    if "pdf_report" in st.session_state:
+        st.sidebar.download_button(
+            label="Download PDF",
+            data=st.session_state["pdf_report"],
+            file_name="Hudson_Cicala_Season_Report.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+        st.sidebar.caption("All Matches • Passes & Defensive Actions")
 
 num_matches = len(dfs_by_match)
 all_match_stats = [compute_stats(dfs_by_match[m], m) for m in dfs_by_match]
@@ -1938,23 +1975,23 @@ with tab_dash:
         total_impact_value = float(df_game.loc[df_game["is_won"], "delta_xt_adj"].sum())
 
         with col_s1:
-            target_section_card("Overview", PASS_TONES[0], [
+            target_section_card("Overview", ACTIVE_CARD_TONES[0], [
                 ("Total Passes Per Game", s_game["total_p90"], T["total_p90"],
                  f"{s_game['total_p90']:.1f}", f"{T['total_p90']:.1f}"),
                 ("% Accuracy", s_game["accuracy_pct"], T["accuracy_pct"],
                  f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
         with col_s2:
-            target_section_card("Advanced", PASS_TONES[1], [
+            target_section_card("Advanced", ACTIVE_CARD_TONES[1], [
                 ("Advanced Passes Per Game", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
                  f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
                 ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
                  f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
         with col_s3:
-            target_section_card("Impact", PASS_TONES[2], [
+            target_section_card("Impact", ACTIVE_CARD_TONES[2], [
                 ("Pass Impact Value Per Game", s_game["xt_p90"], T["xt_p90"],
-                 f"{s_game['xt_p90']:.1f}", f"{T['xt_p90']:.1f}", f"Total: {total_impact_value:.3f}"),
+                 f"{s_game['xt_p90']:.1f} ({total_impact_value:.1f})", f"{T['xt_p90']:.1f}"),
                 ("% Positive Impact", s_game["pos_pct"], T["pos_pct"],
                  f"{s_game['pos_pct']:.1f}%", f"{T['pos_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
@@ -2024,21 +2061,21 @@ with tab_dash:
         # ── DEFENSIVE STATS CARDS ─────────────────────────────
         col_ds1, col_ds2, col_ds3 = st.columns(3)
         with col_ds1:
-            target_section_card("Overview", PASS_TONES[0], [
+            target_section_card("Overview", ACTIVE_CARD_TONES[0], [
                 ("Defensive Actions Per Game", d_game["total_actions_p90"], T["total_actions_p90"],
                  f"{d_game['total_actions_p90']:.1f}", f"{T['total_actions_p90']:.1f}"),
                 ("Actions in Own Half Per Game", d_game["actions_own_p90"], T["actions_own_p90"],
                  f"{d_game['actions_own_p90']:.1f}", f"{T['actions_own_p90']:.1f}"),
             ], CARD_STYLE, _layout_mode)
         with col_ds2:
-            target_section_card("Duels", PASS_TONES[1], [
+            target_section_card("Duels", ACTIVE_CARD_TONES[1], [
                 ("Defensive Duels Per Game", d_game["duels_p90"], T["duels_p90"],
                  f"{d_game['duels_p90']:.1f}", f"{T['duels_p90']:.1f}"),
                 ("% Duels Won", d_game["duels_won_pct"], T["duels_won_pct"],
                  f"{d_game['duels_won_pct']:.1f}%", f"{T['duels_won_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
         with col_ds3:
-            target_section_card("Funnel Protection", PASS_TONES[2], [
+            target_section_card("Funnel Protection", ACTIVE_CARD_TONES[2], [
                 ("Funnel Protection Actions Per Game", d_game["funnel_actions_p90"], T["funnel_actions_p90"],
                  f"{d_game['funnel_actions_p90']:.1f}", f"{T['funnel_actions_p90']:.1f}"),
                 ("% FPA Successful", d_game["funnel_success_pct"], T["funnel_success_pct"],
