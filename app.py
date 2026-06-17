@@ -865,7 +865,10 @@ def load_benchmark_targets(source: str) -> dict | None:
     path = Path(filename)
     if not path.exists():
         return None
-    df = pd.read_excel(path)
+    try:
+        df = pd.read_excel(path)
+    except ImportError:
+        return None
     if "Position" not in df.columns or "Minutes played" not in df.columns:
         return None
     df = df[df["Position"].isin(BENCHMARK_POSITIONS)].copy()
@@ -896,8 +899,8 @@ def build_metric_targets(pass_base: dict, def_base: dict, benchmark_source: str 
     return {
         "total_p90": bench["total_p90"] if bench else _rand_target(pass_base["total_p90"], "total_p90"),
         "accuracy_pct": bench["accuracy_pct"] if bench else _rand_target(pass_base["accuracy_pct"], "accuracy_pct", is_pct=True),
-        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base["advanced_passes_p90"], "advanced_passes_p90"),
-        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base["advanced_accuracy_pct"], "advanced_accuracy_pct", is_pct=True),
+        "advanced_passes_p90": bench["advanced_passes_p90"] if bench else _rand_target(pass_base.get("prog_p90", 0), "advanced_passes_p90"),
+        "advanced_accuracy_pct": bench["advanced_accuracy_pct"] if bench else _rand_target(pass_base.get("progressive_accuracy_pct", 0), "advanced_accuracy_pct", is_pct=True),
         "xt_p90": _rand_target(pass_base["xt_p90"], "xt_p90", decimals=2 if pass_base["xt_p90"] < 5 else 1),
         "pos_pct": _rand_target(pass_base["pos_pct"], "pos_pct", is_pct=True),
         "total_actions_p90": bench["total_actions_p90"] if bench else _rand_target(def_base["total_actions_p90"], "total_actions_p90"),
@@ -1795,11 +1798,11 @@ def generate_season_pdf(card_tones=None, benchmark_source="MLS"):
             ("% Accuracy", f"{s_pass['accuracy_pct']:.1f}%", f"{T_pdf['accuracy_pct']:.1f}%",
              s_pass["accuracy_pct"], T_pdf["accuracy_pct"]),
         ], ps, col_w),
-        _pdf_dark_card(tones[1], "Advanced", [
-            ("Advanced Passes Per Game", f"{s_pass['advanced_passes_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
-             s_pass["advanced_passes_p90"], T_pdf["advanced_passes_p90"]),
-            ("% Advanced Accuracy", f"{s_pass['advanced_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
-             s_pass["advanced_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
+        _pdf_dark_card(tones[1], "Progressive", [
+            ("Progressive Passes Per Game", f"{s_pass['prog_p90']:.1f}", f"{T_pdf['advanced_passes_p90']:.1f}",
+             s_pass["prog_p90"], T_pdf["advanced_passes_p90"]),
+            ("% Progressive Accuracy", f"{s_pass['progressive_accuracy_pct']:.1f}%", f"{T_pdf['advanced_accuracy_pct']:.1f}%",
+             s_pass["progressive_accuracy_pct"], T_pdf["advanced_accuracy_pct"]),
         ], ps, col_w),
         _pdf_dark_card(tones[2], "Impact", [
             ("Pass Impact Value Per Game", f"{s_pass['xt_p90']:.1f}", f"{T_pdf['xt_p90']:.1f}",
@@ -2054,11 +2057,11 @@ with tab_dash:
                  f"{s_game['accuracy_pct']:.1f}%", f"{T['accuracy_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
         with col_s2:
-            target_section_card("Advanced", ACTIVE_CARD_TONES[1], [
-                ("Advanced Passes Per Game", s_game["advanced_passes_p90"], T["advanced_passes_p90"],
-                 f"{s_game['advanced_passes_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
-                ("% Advanced Accuracy", s_game["advanced_accuracy_pct"], T["advanced_accuracy_pct"],
-                 f"{s_game['advanced_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
+            target_section_card("Progressive", ACTIVE_CARD_TONES[1], [
+                ("Progressive Passes Per Game", s_game["prog_p90"], T["advanced_passes_p90"],
+                 f"{s_game['prog_p90']:.1f}", f"{T['advanced_passes_p90']:.1f}"),
+                ("% Progressive Accuracy", s_game["progressive_accuracy_pct"], T["advanced_accuracy_pct"],
+                 f"{s_game['progressive_accuracy_pct']:.1f}%", f"{T['advanced_accuracy_pct']:.1f}%"),
             ], CARD_STYLE, _layout_mode)
         with col_s3:
             target_section_card("Impact", ACTIVE_CARD_TONES[2], [
